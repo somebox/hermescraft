@@ -303,15 +303,19 @@ export function createCraftingActions(services) {
         );
       }
 
-      // ── PaperMCP-first for bench crafts: skip the racy native window. ──
-      // The mineflayer/Paper 1.21 3x3 table-craft race (#3399) lands only ~1-in-5
-      // native attempts, so the loop below otherwise burns up to 6 tries (~4-5s)
-      // before falling back to the reliable server-side craft. When PaperMCP is
-      // configured AND the recipe needs a table, do that server-side craft FIRST —
-      // one command vs seconds of racing (gv2-2026-06-17-4: ~150 no-op retries
-      // starved the colony). Bodies WITHOUT PaperMCP, or a fallback that doesn't
-      // land, fall through to the native retry loop unchanged.
-      if (requiresBench && paperMcpConfig()) {
+      // ── PaperMCP-first: skip the racy/no-op native window. ──
+      // The mineflayer/Paper 1.21 craft no-op (#3399) lands only ~1-in-5 native
+      // attempts, so the loop below otherwise burns tries before falling back to the
+      // reliable server-side craft. When PaperMCP is configured, do that server-side
+      // craft FIRST — one command vs seconds of racing (gv2-2026-06-17-4: ~150 no-op
+      // retries starved the colony). This now covers 2x2 recipes too: the assumption
+      // "2x2 doesn't hit the race" was false — gv2-2026-06-20-6 had 5 plank no-ops and
+      // crafting_table (a 2x2: 4 planks->1 table) consumed planks for 0 result with NO
+      // fallback (2x2 got 1 native attempt + no server-side path). Since `ingsIntact`
+      // is checked against startedInventory (before any native craft), this fires for
+      // crafting_table while the bot still holds its planks -> deterministic clear+give,
+      // no native consumption. Bodies WITHOUT PaperMCP fall through to the native loop.
+      if (paperMcpConfig()) {
         const requiredIngs = recipeIngredientMap(recipe, ctx.world.mcData);
         const ingsIntact = Object.entries(requiredIngs).every(
           ([n, perCraft]) => (startedInventory[n] || 0) >= perCraft * invocations,
@@ -340,7 +344,10 @@ export function createCraftingActions(services) {
       // fallback also covers this, but bodies without PaperMCP configured rely
       // entirely on this in-process retry (which is why a lone attempt made
       // agents see a "broken" craft and give up). 2x2 recipes don't hit the race.
-      const MAX_CRAFT_ATTEMPTS = requiresBench ? 6 : 1;
+      // 2x2 was 1 attempt on the assumption it never no-ops — false (crafting_table /
+      // plank no-ops). Give it a few native retries too (PaperMCP-first already handles
+      // the configured case; this covers bodies without PaperMCP).
+      const MAX_CRAFT_ATTEMPTS = requiresBench ? 6 : 3;
       let endedInventory = startedInventory;
       let craftedDelta = 0;
       for (let _attempt = 0; _attempt < MAX_CRAFT_ATTEMPTS; _attempt++) {
@@ -376,7 +383,7 @@ export function createCraftingActions(services) {
           const ingsIntact = Object.entries(requiredIngs).every(
             ([n, perCraft]) => (startedInventory[n] || 0) >= perCraft * invocations,
           );
-          if (requiresBench && ingsIntact && paperMcpConfig()) {
+          if (ingsIntact && paperMcpConfig()) {
             const fb = await serverSideCraftFallback({
               itemName, count: invocations, recipe, ctx, b,
               getMyName, log, sleep, inventoryAt,
@@ -457,7 +464,7 @@ export function createCraftingActions(services) {
         const ingsIntact = Object.entries(requiredIngs).every(
           ([n, perCraft]) => (endedInventory[n] || 0) >= perCraft * invocations,
         );
-        if (requiresBench && ingsIntact && paperMcpConfig()) {
+        if (ingsIntact && paperMcpConfig()) {
           const fb = await serverSideCraftFallback({
             itemName, count: invocations, recipe, ctx, b,
             getMyName, log, sleep, inventoryAt,
