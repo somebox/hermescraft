@@ -25,6 +25,11 @@ if [ -f "$REPO_ROOT/.env" ]; then set -a; . "$REPO_ROOT/.env"; set +a; fi
 PY="$REPO_ROOT/.venv/bin/python3"           # needs mapcatalog + pyyaml
 MC_HOST="${MC_HOST:-192.168.1.202}"
 MC_PORT="${MC_PORT:-25565}"
+mkdir -p "$REPO_ROOT/data/runtime"
+# Use one lease registry for workers, gateway-dispatched `mc`, and the poller
+# reaper. Without this, poller-side `mc bot status/release` falls back to
+# ~/.hermes/bot-leases.db and cannot see worker leases in data/runtime.
+export HERMES_BOT_LEASE_DB="${HERMES_BOT_LEASE_DB:-$REPO_ROOT/data/runtime/bot-leases.db}"
 
 # body roster: user:apiport:viewerport (matches genesis2_lib.BODIES)
 BODIES=("Mox:3007:4007" "Pip:3005:4005" "Zee:3006:4006")
@@ -47,9 +52,16 @@ ensure_body() {
   # planner picks it up), not `mc advise` (gv2-2026-06-16-1: 62 dead advise
   # attempts because the bot's own stuck/blocked hints kept pointing there). This
   # flag degrades those hints to a kanban_block directive on genesis bodies only.
+  # HERMES_CONSTRUCT_CONTEXT=1: enable construct-context scoping on the BODY process
+  # so the schematic blueprint pipeline works — `mc construct show/begin/end`, plan
+  # workset binding, and in-footprint mutation filtering. constructScopingEnabled()
+  # reads this from the body's own env; without it the verbs no-op and the planner
+  # abandons the blueprint pipeline (gv2-2026-06-24-4: "construct/blueprint feature
+  # disabled on this bot"). The mint adds it to worker env_passthrough; the body
+  # itself needs it set here.
   (cd "$REPO_ROOT" && API_PORT="$port" VIEWER_PORT="$viewer" BOT_MOVEMENT_PROFILE=slow \
      MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="$user" \
-     MC_SUPPRESS_ADVISE_HINTS=1 \
+     MC_SUPPRESS_ADVISE_HINTS=1 HERMES_CONSTRUCT_CONTEXT=1 \
      nohup node bot/server.js > "$log" 2>&1 &)
 }
 

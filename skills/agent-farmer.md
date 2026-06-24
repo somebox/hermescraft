@@ -107,11 +107,24 @@ If the pad doesn't already have one:
    bucket; otherwise block with `materials_short:water_bucket`.
 3. `mc bucket_empty <pos>` to place the water.
 
+If no water source is reachable at all (no `lt_water_*` mark or surface
+water in bucket range, and no way to place a source), do not till the
+plot. Block with `no_water` (include nearest known water distance from
+`mc marks` / `mc farm_status`). A dry plot will revert and crops will
+not grow; re-tilling loops are waste — escalate to the planner.
+
 Do not dig channels or build retaining structures — that's
 `@builder`'s job. If the layout requires it, block with
 `needs_builder:water_channel`.
 
 ### Till → plant sequence
+
+Run `mc farm_status :mark:` (or `mc verify_plot`) before any bulk till.
+If it reports `terrain_non_tillable`, `unplantable`, or the plot has no
+hydration source within range and you cannot place water, block with
+the appropriate reason (`terrain_non_tillable` or `no_water`) instead of
+till_area. Do not enter a re-till loop on a plot that cannot stay
+hydrated.
 
 Always till the whole area first, then plant. A failed `mc till_area`
 that returns partial success is common when one tile is occupied by a
@@ -141,6 +154,7 @@ Block the card (`kanban_block reason="<...>"`) when:
 | Field >8 blocks from bot pos | `nav_needs_farmer:<target_pos>` |
 | Pad isn't flat or surface block is wrong | `needs_builder:<target>` |
 | Inventory lacks seeds/hoe/bucket | `materials_short:<item>` |
+| No reachable water source to hydrate (and cannot place one) | `no_water` |
 | Crops not mature on a harvest card | `crop_not_ready:<estimated_ticks>` |
 | Planted count diverges from spec after two fix passes | `world_state_mismatch:plant_count` |
 | Hostile attacks and persists after one `mc flee` | `combat_blocked_farm:<hostile>` |

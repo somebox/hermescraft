@@ -57,6 +57,8 @@ python3 scripts/gv2-score-run.py --run-dir data/genesis-v2-runs/<id>
 open data/genesis-v2-runs/_index/index.html
 ```
 
+- **PR B — Genesis-v2 alignment (2026-06-24):** kanban board/card schema tolerance; schematic harness (`gv2_schematic_shelter` bodies, rival hand-fill validator); planner/skill doctrine (system-owned `starter_shelter`, `wb escalate` for NEEDS REVIEW); construct card harness in `minecraft-building.md`; pilot KPIs: bootstrap once, per-phase VERIFY, stale-ready visibility on board.
+
 See also [`competence-scorecard.md`](competence-scorecard.md) for schema fields.
 
 ## When to commit (gv2 measurement stack)

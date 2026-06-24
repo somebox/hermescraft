@@ -76,6 +76,28 @@ kanban DB with `sqlite3` / raw SQL — it bypasses board invariants.
   continue the existing one instead. Re-filing FEEDBACK or supply cards you already
   filed is pure churn and confuses the team. One epic → one FEEDBACK card per
   specialist; ask once, wait for the answer.
+- REAL VERBS ONLY — never invent `mc` verbs. To register a location use
+  `mc mark <name> --at <x> <y> <z>` (NOT `mark_register`). There is no `rescue_request`
+  / `rescue` verb — when a worker is stuck, the answer is `kanban_block` with a
+  structured reason, not a fabricated verb. If you are unsure a verb exists, it
+  probably doesn't: stick to the ones in `genesis-v2-worker-card-schema`. The offline
+  validator rejects unknown verbs, so a card with an invented verb NEVER runs — it
+  just inflates `gv2_invalid`.
+- NO RE-AUTHORING A FAILING CARD. The no-duplicate rule includes *renamed retries*:
+  do NOT re-file the same goal with a `[RETRY]` / `[RESCUE]` / `[FRESH]` / `[FIXED]`
+  suffix — a different title is still a duplicate. A card that failed gets **edited in
+  place** (fix the body) or **blocked/rescoped once**; the poller's SUPERVISE backstop
+  already re-engages it. Re-filing variants is the #1 source of invalid-card churn
+  (gv2-2026-06-24-7: one cobblestone SUPPLY re-filed 4× and one base_anchor SCOUT 3×,
+  all invalid).
+- `layer: L0|L1` is ONLY for base-shelter ground/slab CONSTRUCT cards. Do NOT copy the
+  L0 template onto a farm/road/mine card — it triggers base-layer checks (preflight,
+  no-chest) that don't apply and will fail validation.
+- base_anchor: register it ONCE as a real shared mark via a SCOUT card whose body runs
+  `mc mark base_anchor --at <x> <y> <z>` on a body, BEFORE filing any card that
+  `checkout --mark base_anchor` / `go_mark base_anchor`. If unsure base_anchor resolves
+  in-world, have cards `checkout --near <x> <y> <z>` by coordinate instead of the mark
+  name.
 - Route worker cards by ASSIGNEE only (colony-scout / colony-gatherer /
   colony-builder / colony-farmer / colony-miner / colony-road). NEVER set a
   `skills` field on a card — the assignee's profile already force-loads the right
@@ -116,7 +138,15 @@ Follow this order unless the board proves a step is already done:
 3. Scout resource marks (`lt_wood_*`, water/farm site, stone/coal site) before SUPPLY.
 4. Open a planned `mine_*` with `mine_site` before ore/coal underground work.
 5. Prefer a flat pad with natural egress before CONSTRUCT; explicit edge/ramp only if unavoidable.
-6. Construct shelter from verified stock and verified footprint.
+6. The SHELTER is SYSTEM-OWNED — do NOT decompose it. Once `base_anchor` is marked, the
+   runtime AUTO-FILES the full `starter_shelter` blueprint pipeline (SUPPLY + CONSTRUCT +
+   VERIFY for L0_ground → L1_slab → L3_walls → L4_roof, plus storage chests). You must
+   NOT author your own shelter / ground-pad / slab / walls / roof / fixtures CONSTRUCT
+   cards — they duplicate and conflict with the schematic cards (gv2-2026-06-24-8: the
+   planner filed 5 parallel "Shelter L0/L1/roof/fixtures" cards, all invalid). Your
+   shelter job is only: (a) ensure `base_anchor` is registered as a real mark, (b) keep
+   the schematic SUPPLY cards fed (gather their materials), (c) unblock/supervise. If a
+   `starter_shelter …` card is missing or wrong, COMMENT on it — do not file a rival.
 
 Hard rules:
 
@@ -125,6 +155,17 @@ Hard rules:
 - No SCOUT/SURVEY/ROAD card without `output_marks:` + `suitability_criteria:` (use the template).
 - No CONSTRUCT without `footprint:` + `protected_cells:` (or explicit clear auth) + survey before place/fill + measurable `done_when`.
 - FEEDBACK answers must become executable worker skeletons; link follow-up cards to the feedback id.
+  Skeleton for a follow-up worker card (fill placeholders, keep literal `mc` lines):
+
+  ```
+  anchor: <mark>
+  source_truth: marks
+  feedback_ref: <feedback_card_id>
+  mc bot checkout --near <X,Y,Z> --cap <role> --mark <mark>
+  … literal mc lines from the agreed plan …
+  done_when: <measurable — marks exist, chest count, verify summary missing=0 …>
+  mc bot release
+  ```
 
 ## Review before mission complete (no bot time)
 
@@ -138,6 +179,6 @@ Before `kanban_complete` on your mission turn:
 3. Fix failing cards (edit, block/rescope, or file replacements). Do not complete the
    mission turn while ready worker cards fail validation.
 
-Exception handling: `skill_view genesis-v2-card-exceptions` — prefer
-`CARD_REVIEW_NEEDED` comments over duplicating stuck work; use structured block prefixes
-for safety stops.
+Exception handling: `skill_view genesis-v2-card-exceptions` — use **`wb escalate`**
+when Steward/operator review is needed (NEEDS REVIEW lane). Prefer `CARD_REVIEW_NEEDED`
+comments for cheap pass-backs; use structured block prefixes for safety stops.

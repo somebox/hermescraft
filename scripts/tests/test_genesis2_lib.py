@@ -1523,3 +1523,42 @@ def test_purge_board_db_hard_deletes_prior_cards(tmp_path, monkeypatch):
 def test_purge_board_db_missing_db_is_noop(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "nope.db"))
     assert g2.purge_board_db() == 0
+
+
+def test_shelter_site_prep_default_no_build_volume_air_wipe(monkeypatch):
+    monkeypatch.delenv("GENESIS2_SHELTER_AIR_PREP", raising=False)
+    cmds = g2.shelter_site_prep_commands("genesis2", 10, 64, -5)
+    assert len(cmds) == 2
+    assert all("cobblestone" in c or "minecraft:water" in c for c in cmds)
+    assert not any(" air replace" in c and "minecraft:water" not in c for c in cmds)
+
+
+def test_shelter_site_prep_air_wipe_when_flagged(monkeypatch):
+    monkeypatch.setenv("GENESIS2_SHELTER_AIR_PREP", "1")
+    cmds = g2.shelter_site_prep_commands("genesis2", 10, 64, -5)
+    assert len(cmds) == 3
+    assert any("10 65 -5 16 68 1 air replace" in c for c in cmds)
+
+
+def test_purge_board_logs_removes_stale_worker_logs(tmp_path, monkeypatch):
+    """gv2-2026-06-24-3: stale <board>/logs/<card>.log transcripts persist across runs
+    (purge_board_db only clears DB rows) and bleed prior-run state into new workers —
+    a builder rebuilt the old -167 base from a recalled log despite a wiped memory.
+    reinit must clear the on-disk logs too."""
+    board = tmp_path / ".hermes" / "kanban" / "boards" / "genesis-v2"
+    (board / "logs").mkdir(parents=True)
+    for cid in ("t_31fc54e7", "t_ce4dc0d8", "t_aaa"):
+        (board / "logs" / f"{cid}.log").write_text("Built shelter at -167,71,-247")
+    keep = board / "logs" / "index.json"
+    keep.write_text("{}")  # non-.log file must survive
+    monkeypatch.setattr(g2, "_board_db_path", lambda: board / "kanban.db")
+
+    removed = g2.purge_board_logs()
+    assert removed == 3
+    assert not list((board / "logs").glob("*.log"))
+    assert keep.exists()
+
+
+def test_purge_board_logs_missing_dir_is_noop(tmp_path, monkeypatch):
+    monkeypatch.setattr(g2, "_board_db_path", lambda: tmp_path / "none" / "kanban.db")
+    assert g2.purge_board_logs() == 0

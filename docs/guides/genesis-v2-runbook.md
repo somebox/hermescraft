@@ -85,6 +85,8 @@ on a live run.
 | # | Item | Why | Where | Verify |
 |---|------|-----|-------|--------|
 | E1 | `reinit_board` — archive leftover cards + init | prior-run cards would dispatch into this run | early in boot python (A4) + board empty until seed | after `run … live`, board has only this run's cards |
+| E1b | `scripts/kanban board` / `card` on genesis-v2 DB | Hermes tasks table may omit facade `size`/`location_*` columns | schema-tolerant reads in `scripts/kanban` | `HERMES_KANBAN_BOARD=genesis-v2 scripts/kanban board --json` exits 0 |
+| E1c | NEEDS REVIEW lane | only `[!ESCALATED]` blocks (`wb escalate`); poller `schema-missing:` stays BLOCKED | `scripts/kanban` board split + `skills/genesis-v2-card-exceptions.md` | escalate test card appears under needs_review in board JSON |
 
 **Naming:** checklist row **E1** above is boot-time **`reinit_board` only**. The **card-gate E1 experiment** (base preflight: poller `block_invalid_ready_cards`, cap-path **`ensure_retro_phase`**, pilot base CONSTRUCT validator rules) is a separate validation run — see [Card-gate E1 experiment](#card-gate-e1-experiment-base-preflight) below. Do not use the reset checklist E1 row as that experiment's pass/fail checklist.
 | E2 | `seed_board` — P1 ready, P2–P5 parked (blocked), scout cards | poller-authoritative phase chain; epics never used as `parents` (deadlock) | `genesis2_lib.seed_board` | 5 epics + 4 scouts; P1 ready |
@@ -101,7 +103,9 @@ Role clarity in seeded flow:
 |---|------|-----|-------|--------|
 | F0 | Gateway up only after seed | see A5 | `genesis-v2.sh` python block | no `spawned=` in gateway.log between clean shutdown and `run … live` |
 | F1 | Schematic shelter bootstrap once `base_anchor` exists | plan-backed build instead of monolithic rcon shell | `genesis2_lib.maybe_bootstrap_schematic_shelter_for_run` (poller) | `cfg.schematic_shelter_bootstrapped=True`; board shows L0→L4 CONSTRUCT/VERIFY chain |
-| F2 | **Dry, solid foundation** — site prep pad only (cobble + drain water under footprint) | base sited over water drowned the colony | `shelter_site_prep_commands` via poller bootstrap | no drowning; footprint walkable before L0 CONSTRUCT |
+| F2 | **Dry, solid foundation (default: agents)** — L0_ground CONSTRUCT levels/drains the pad in-world | real build sim, not RCON terraforming | filed `starter_shelter` phase chain (F1) | workers place/clear blocks; no automatic poller `fill` on live runs |
+| F2a | **(ops/test backstop)** RCON cobble apron + water drain under footprint | drowned colony on wet seeds (historical) | `GENESIS2_SHELTER_SITE_PREP=1` → `shelter_site_prep_commands` (no air wipe unless F2b) | `config.shelter_site_prepped=true` once; **off by default** |
+| F2b | **(ops/test only)** Wipe 7×7×4 build box to air before workers | sterile fixture / debug | `GENESIS2_SHELTER_AIR_PREP=1` (requires F2a site prep path) | **off by default** — never on live gv2 sim |
 | F3 | **Chest marks after schematic build** — `[CONSTRUCT] shelter storage chests + marks` card at tail of chain | P1 gate needs `chest_*` marks; plan has no chest cells | filed by `file_starter_shelter_sequence` | `mc marks` shows 2 `chest_*` after that card |
 | F3b | *(optional)* **Reference paste** for ops review | compare world to plan without workers | `scripts/place-schematic-rcon.py starter_shelter --at …` | matches `mc blueprint verify` |
 | F4 | Poller skill-strip backstop | null `skills` on worker cards the planner poisoned + unblock | `strip_worker_card_skills` (poller step 1) | poller log "stripped … skills" (only if poisoned) |
@@ -114,7 +118,7 @@ Role clarity in seeded flow:
 | # | Item | Why | Where | Verify |
 |---|------|-----|-------|--------|
 | G1 | Seed one standing `[MISSION]` card only | no phase epics/gates in emergent mode | `seed_emergent_mission` | board has mission, no P1..P5 epics |
-| G2 | Poller disables phase/render/supply auto-cards, keeps control-plane backstops | planner owns decomposition; poller still prevents deadlocks/stalls. **Schematic shelter bootstrap** (plan patch + site prep + CONSTRUCT/VERIFY chain) still runs when `base_anchor` is set — same as phased F1. | `genesis-v2-poller.py` emergent branch | poller log prints emergent-mode line; schematic cards on board after anchor |
+| G2 | Poller disables phase/render/supply auto-cards, keeps control-plane backstops | planner owns decomposition; poller still prevents deadlocks/stalls. **Schematic shelter bootstrap** (plan patch + CONSTRUCT/VERIFY chain; RCON site prep only if F2a) still runs when `base_anchor` is set — same as phased F1. | `genesis-v2-poller.py` emergent branch | poller log prints emergent-mode line; schematic cards on board after anchor |
 | G3 | Mission continuity uses same-card retry first | avoids MANAGE churn and preserves card continuity | `reengage_planner_if_mission_closed` | closed mission gets `retry`; fallback MANAGE only on retry failure |
 | G4 | Planner mission protocol is terminal-per-turn | dispatcher requires complete/block on dispatched turns | `data/genesis-v2/emergent-mission.md`, `emergent-planner-soul.md` | no `protocol_violation`/`gave_up` loop on mission turn exits |
 | G5 | Spawn: auto dry land or operator `--spawn` | same pin semantics as gated `new-run`; no water requirement on auto | `genesis-v2.sh` emergent-run | log shows pinned or dry land spawn; `config.json` has `spawn_source` |

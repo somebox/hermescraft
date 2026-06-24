@@ -537,6 +537,134 @@ def test_board_epic_count_excludes_chain_epics(env, capsys):
     assert p1["done"] == 0
 
 
+def _seed_legacy_board(tmp_path: Path) -> Path:
+    """Hermes genesis-v2 board shape without facade P0 columns (size, location_*)."""
+    db = tmp_path / "kanban_legacy.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript(
+        """
+        CREATE TABLE tasks (
+            id           TEXT PRIMARY KEY,
+            title        TEXT NOT NULL,
+            body         TEXT,
+            assignee     TEXT,
+            status       TEXT NOT NULL,
+            priority     INTEGER DEFAULT 0,
+            created_at   INTEGER NOT NULL,
+            started_at   INTEGER,
+            completed_at INTEGER,
+            claim_lock   TEXT
+        );
+        CREATE TABLE task_links (
+            parent_id TEXT NOT NULL,
+            child_id  TEXT NOT NULL,
+            PRIMARY KEY (parent_id, child_id)
+        );
+        CREATE TABLE task_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            author TEXT NOT NULL,
+            body TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE TABLE task_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            payload TEXT,
+            created_at INTEGER NOT NULL
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def _insert_legacy_task(db: Path, **kw):
+    defaults = dict(
+        title="x", body="", assignee="flint", status="todo",
+        priority=0, created_at=int(time.time()), started_at=None,
+        completed_at=None, claim_lock=None,
+    )
+    defaults.update(kw)
+    with sqlite3.connect(str(db)) as conn:
+        conn.execute(
+            "INSERT INTO tasks (id, title, body, assignee, status, priority, "
+            "created_at, started_at, completed_at, claim_lock) "
+            "VALUES (:id, :title, :body, :assignee, :status, :priority, "
+            ":created_at, :started_at, :completed_at, :claim_lock)",
+            defaults,
+        )
+
+
+@pytest.fixture()
+def legacy_env(tmp_path, monkeypatch):
+    db = _seed_legacy_board(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(db))
+    monkeypatch.setenv("HERMES_KANBAN_BOARD", "genesis-v2")
+    sys.modules.pop("kanban_facade", None)
+    k = _load_module("kanban_facade", KANBAN_PATH)
+    k.DB_PATH = db
+    monkeypatch.setattr(k.shutil, "which", lambda _: "/usr/local/bin/hermes")
+    return k
+
+
+def test_board_json_without_size_column(legacy_env, capsys):
+    _insert_legacy_task(
+        legacy_env.DB_PATH,
+        id="t_gv2_01",
+        title="[CONSTRUCT] pad",
+        status="ready",
+        assignee="colony-builder",
+    )
+    rc = legacy_env.main(["board", "--json"])
+    assert rc == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["ready"][0]["id"] == "t_gv2_01"
+    assert data["ready"][0]["size"] is None
+
+
+def test_schema_missing_blocked_not_needs_review(legacy_env, capsys):
+    _insert_legacy_task(
+        legacy_env.DB_PATH,
+        id="t_bad",
+        title="[SUPPLY] oak",
+        status="blocked",
+        assignee="colony-gatherer",
+    )
+    with sqlite3.connect(str(legacy_env.DB_PATH)) as conn:
+        conn.execute(
+            "INSERT INTO task_events (task_id, kind, payload, created_at) "
+            "VALUES (?, 'blocked', ?, ?)",
+            (
+                "t_bad",
+                json.dumps({"reason": "schema-missing: missing destination:"}),
+                int(time.time()),
+            ),
+        )
+    rc = legacy_env.main(["board", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert not data["needs_review"]
+    assert data["blocked"][0]["id"] == "t_bad"
+    assert "schema-missing" in data["blocked"][0]["reason"]
+
+
+def test_card_json_without_size_column(legacy_env, capsys):
+    _insert_legacy_task(
+        legacy_env.DB_PATH,
+        id="t_card_legacy",
+        title="[SCOUT] site",
+        status="todo",
+    )
+    rc = legacy_env.main(["card", "t_card_legacy", "--json"])
+    assert rc == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["id"] == "t_card_legacy"
+    assert data["size"] is None
+    assert data["location"] is None
+
+
 # ─── card (read view) ────────────────────────────────────────────────────
 
 

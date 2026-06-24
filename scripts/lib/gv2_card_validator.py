@@ -56,6 +56,10 @@ FARM_PREP_CONTEXT_RE = re.compile(
     r"\b(till|plant|harvest|farm_|farm\b|wheat|hoe|crop|plot|seed)\b",
     re.IGNORECASE,
 )
+_FARM_PREFLIGHT_PROBE_RE = re.compile(
+    r"^\s*mc\s+(farm_status|verify_plot)\b",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 _ANCHOR_RE = re.compile(r"^\s*anchor\s*:\s*\S+", re.IGNORECASE | re.MULTILINE)
 _SOURCE_TRUTH_RE = re.compile(r"^\s*source_truth\s*:\s*\S+", re.IGNORECASE | re.MULTILINE)
@@ -105,6 +109,15 @@ _WALL_FLOOR_RE = re.compile(
 
 _PLACE_BEFORE_SURVEY_RE = re.compile(
     r"^\s*mc\s+(place|fill)\b",
+    re.MULTILINE | re.IGNORECASE,
+)
+_STARTER_SHELTER_TITLE_RE = re.compile(r"starter_shelter", re.IGNORECASE)
+_SCHEMATIC_HARNESS_RE = re.compile(
+    r"task_context\s+set|construct\s+show|workset\s+slices|ground_prep:",
+    re.IGNORECASE,
+)
+_HAND_WORLD_FILL_RE = re.compile(
+    r"^\s*mc\s+fill\s+[^\n]*\b-?\d+\s+-?\d+\s+-?\d+",
     re.MULTILINE | re.IGNORECASE,
 )
 _BASE_LAYER_RE = re.compile(r"^\s*layer\s*:\s*L[01]\b", re.IGNORECASE | re.MULTILINE)
@@ -215,17 +228,18 @@ def _is_base_layer_construct(title: str | None, body: str | None) -> bool:
     """
     title = title or ""
     body = body or ""
-    if _BASE_LAYER_RE.search(body):
+    if _BASE_LAYER_RE.search(body):  # explicit `layer: L0|L1`
         return True
     title_has_layer = bool(_TITLE_L0_L1_RE.search(title))
     title_has_base = "base" in title.lower() or "base_anchor" in body.lower()
     if title_has_layer and title_has_base:
         return True
-    if (
-        "base_anchor" in body.lower()
-        and _FOOTPRINT_RE.search(body)
-        and re.search(r"\blayer\b", f"{title}\n{body}", re.IGNORECASE)
-    ):
+    # Explicit schematic phase cue (phase: L0_* / L1_*). The old broad clause
+    # (base_anchor + footprint + bare "layer") over-fired: a 9x9 wheat farm and an
+    # L4 roof+fixtures card both got mis-flagged as base-layer (gv2-2026-06-24-7)
+    # because "layer" appears in unrelated prose (e.g. "use construct workset"). A
+    # base-layer card must carry an explicit L0/L1 signal — not just the word "layer".
+    if re.search(r"^\s*phase\s*:\s*L[01]\b", body, re.IGNORECASE | re.MULTILINE):
         return True
     return False
 
@@ -322,6 +336,16 @@ def validate_card(
                 errors.append("schematic CONSTRUCT (plan:) missing worksite:")
             if not _PHASE_LEVEL_RE.search(body):
                 errors.append("schematic CONSTRUCT (plan:) missing phase: or level:")
+        if (
+            _STARTER_SHELTER_TITLE_RE.search(title or "")
+            and _HAND_WORLD_FILL_RE.search(body or "")
+            and not _SCHEMATIC_HARNESS_RE.search(body or "")
+        ):
+            errors.append(
+                "starter_shelter CONSTRUCT must use the schematic harness "
+                "(task_context set, construct show, workset-scoped fill, or L0 ground_prep) "
+                "— do not file hand world-coordinate mc fill boxes"
+            )
         lines = body.splitlines()
         survey_idx = next(
             (i for i, ln in enumerate(lines) if re.search(r"mc\s+(scene|observe)\b", ln, re.I)),
@@ -333,14 +357,25 @@ def validate_card(
                     warnings.append("placement/fill appears before mc scene/observe on shelter card")
                     break
         if _is_base_layer_construct(title, body):
-            if not _PREFLIGHT_RE.search(body):
-                errors.append("base-layer CONSTRUCT missing preflight:")
+            # Schematic/blueprint base-layer cards (plan:) express preflight as
+            # construct-context verbs (mc task_context set + mc construct show) and
+            # split materials/verify into sibling SUPPLY/VERIFY cards, so the manual
+            # base-build FIELD requirements (preflight:/materials_required:/
+            # verify_on_site:) don't apply — they're validated by the schematic
+            # worksite/phase checks above. Without this exemption the validator blocks
+            # its OWN bootstrap-filed L0/L1 cards ("missing preflight:"), which forces
+            # the planner to abandon the blueprint pipeline for a manual shelter
+            # (gv2-2026-06-24-4, t_c75761cf). The real invariants below still apply.
+            schematic = bool(_PLAN_FIELD_RE.search(body))
+            if not schematic:
+                if not _PREFLIGHT_RE.search(body):
+                    errors.append("base-layer CONSTRUCT missing preflight:")
+                if not _MATERIALS_REQUIRED_RE.search(body):
+                    warnings.append("base-layer CONSTRUCT missing materials_required:")
+                if not _VERIFY_ON_SITE_RE.search(body):
+                    warnings.append("base-layer CONSTRUCT missing verify_on_site:")
             if _CHEST_FURNACE_PLACE_RE.search(body):
                 errors.append("base-layer L0/L1 CONSTRUCT must not place chest/furnace")
-            if not _MATERIALS_REQUIRED_RE.search(body):
-                warnings.append("base-layer CONSTRUCT missing materials_required:")
-            if not _VERIFY_ON_SITE_RE.search(body):
-                warnings.append("base-layer CONSTRUCT missing verify_on_site:")
             if _SOURCE_TRUTH_HANDOFF_RE.search(body):
                 errors.append(
                     "base-layer CONSTRUCT uses source_truth: handoff — file a done SCOUT/SURVEY "
@@ -349,12 +384,22 @@ def validate_card(
 
     if resolved_kind == "VERIFY":
         if assignee in GV2_WORKER_ASSIGNEES:
-            if not _BASE_LAYER_RE.search(body) and not _VERIFY_GATE_RE.search(body):
-                errors.append("VERIFY card missing layer: L0|L1 or gate: ground|slab|fixtures")
-            if not _VERIFY_LAYER_CMD_RE.search(body):
-                errors.append(
-                    "VERIFY card must invoke scripts/gv2-verify-layer.py (read-only gate probe)"
-                )
+            # Schematic VERIFY cards (plan:) gate via `mc blueprint verify <plan>` — the
+            # blueprint's own read-only diff — not the manual gv2-verify-layer.py probe.
+            # The manual layer:/gate: + verify-layer.py requirements target the free-form
+            # build_layer doctrine and wrongly rejected the bootstrap's OWN VERIFY cards
+            # (all 3 in gv2-2026-06-24-7), blocking every blueprint per-layer gate.
+            schematic_verify = bool(
+                _PLAN_FIELD_RE.search(body)
+                and re.search(r"mc\s+blueprint\s+verify\b", body, re.IGNORECASE)
+            )
+            if not schematic_verify:
+                if not _BASE_LAYER_RE.search(body) and not _VERIFY_GATE_RE.search(body):
+                    errors.append("VERIFY card missing layer: L0|L1 or gate: ground|slab|fixtures")
+                if not _VERIFY_LAYER_CMD_RE.search(body):
+                    errors.append(
+                        "VERIFY card must invoke scripts/gv2-verify-layer.py (read-only gate probe)"
+                    )
             if not _DEPENDS_ON_RE.search(body):
                 warnings.append(
                     "VERIFY card missing depends_on: — wire kanban set-after from layer CONSTRUCT"
@@ -368,6 +413,13 @@ def validate_card(
                 errors.append("scout/survey card missing output_marks:")
             if not _SCOUT_CRITERIA_RE.search(body):
                 errors.append("scout/survey card missing suitability_criteria:")
+
+    if resolved_kind in ("FARM", "TILL") or assignee == "colony-farmer":
+        if assignee in GV2_WORKER_ASSIGNEES and FARM_PREP_CONTEXT_RE.search(body or ""):
+            if not _FARM_PREFLIGHT_PROBE_RE.search(body or ""):
+                warnings.append(
+                    "FARM/TILL card missing mc farm_status or mc verify_plot preflight before bulk till/plant"
+                )
 
     if _VALUABLE_BRIDGE_RE.search(body):
         errors.append(

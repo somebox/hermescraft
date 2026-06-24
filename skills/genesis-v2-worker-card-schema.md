@@ -36,9 +36,18 @@ mc bot release
 | SURVEY / SCOUT / ROAD | `output_marks:`, `suitability_criteria:`; `mc scene`/`mc observe` (see template) |
 | CONSTRUCT / BUILD | `footprint:`, `protected_cells:` (or explicit clear/overwrite auth); survey before bulk `place_fill`; for base L0/L1 also include `layer:`, `preflight:`, `materials_required:`, `verify_on_site:`, `work:` (see templates) |
 | VERIFY | `layer:` or `gate:`, `verify_cmd:` with `gv2-verify-layer.py`, `depends_on:` + kanban `set-after`; see Layer gate VERIFY templates |
+
+**VERIFY dialect (pick one per card):**
+
+| Build style | `verify_cmd:` / body probe |
+|-------------|----------------------------|
+| Schematic (`plan:` on VERIFY body) | `mc blueprint verify <plan_id> --range …` or `--level N` (phase slice) |
+| Manual pad (no `plan:`) | `python3 scripts/gv2-verify-layer.py --origin … --gate ground\|slab …` |
+
+Schematic CONSTRUCT cards run inline `mc blueprint verify` before `construct end`; the sibling VERIFY card repeats the same probe for the acceptance gate.
 | MINE (mining intent) | `mine_site:` before underground verbs |
 | SUPPLY | `source:`, `destination:`, `quantity:`, `withdrawable:`; **+ `mine_site:` if the source is a mine** (see template) |
-| FARM / TILL | till/plant verbs; no `mine_site` for farm prep |
+| FARM / TILL | till/plant verbs; `mc farm_status` or `mc verify_plot` before bulk till/plant; block `no_water` when dry (see `agent-farmer`) |
 
 **Kind it right.** `[SUPPLY]` is only for hauling NEW material from a `source:` to a
 `destination:` with a target `quantity:`. Placing chests, crafting, or depositing
@@ -75,6 +84,24 @@ mine_site:
   resource: <coal_ore|iron_ore|…>
   reuse_existing: <true|false>
 ```
+
+**Stone / cobblestone SUPPLY (mark-if-found, else mine down).** Stone is almost
+always *buried*, not exposed — a scout cannot drop a surface `lt_stone_*` mark on a
+grass/dirt base (it will report `stone: not_enough`, "0 exposed"). So **never** author
+a cobblestone/stone SUPPLY whose only source is a surface stone mark, and never cite a
+mark you have not confirmed exists (a `go_mark <missing>` strands the worker). Author it
+as **both paths**:
+
+- **If** a real surface stone/coal mark exists (confirm via `mc marks`): `source:` it and
+  `mc go_mark` there.
+- **Else** (the normal case): make it a mining-intent card — add a `mine_site:` block at a
+  **base-adjacent** quarry and dig **straight down to the stone layer** (`target_y`
+  ≤ ~60). Do **not** surface-mine near water (holes flood; `mc dig` loses line-of-sight to
+  buried stone). Deposit to a chest that exists; if `chest_stone` is unregistered, deposit
+  to the nearest base `chest_*` and register `chest_stone` there.
+
+This is the doctrine baked into the schematic plan's cobblestone SUPPLY body
+(`scripts/lib/plan_supply.py`); planner-authored stone supply must match it.
 
 ## SCOUT / SURVEY / ROAD template (copy verbatim; fill placeholders)
 

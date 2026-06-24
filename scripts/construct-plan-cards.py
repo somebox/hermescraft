@@ -29,6 +29,12 @@ from scripts.lib.plan_supply import (  # noqa: E402
     phase_record,
     resolve_phase_key,
 )
+from scripts.lib.gv2_schematic_shelter import (  # noqa: E402
+    PHASE_SEQUENCE,
+    STARTER_SHELTER_PLAN_ID,
+    _construct_body_for_phase,
+    _with_epic_trailer,
+)
 
 KANBAN = ROOT / "scripts" / "kanban"
 
@@ -60,15 +66,17 @@ def file_bundle(
     epic_for: str | None,
 ) -> dict[str, Any]:
     supply_ids: list[str] = []
+    plan_id = str(plan.get("plan_id") or "")
 
     for card in bundle["supply"]:
+        body = _with_epic_trailer(card["body"], epic_for)
         args = [
             "add",
             card["title"],
             "--assignee",
             card["assignee"],
             "--body",
-            card["body"],
+            body,
             "--json",
         ]
         if epic_for:
@@ -80,13 +88,42 @@ def file_bundle(
         supply_ids.append(sid)
 
     construct = bundle["construct"]
+    phase_key = bundle["phase_key"]
+    if plan_id == STARTER_SHELTER_PLAN_ID:
+        final_phase = phase_key == PHASE_SEQUENCE[-1]
+        construct_body = _construct_body_for_phase(
+            plan,
+            phase_key,
+            worksite=worksite,
+            anchor_mark=anchor_mark,
+            checkout_near=checkout_near,
+            final_phase=final_phase,
+        )
+    else:
+        ph = phase_record(plan, phase_key) or {}
+        level = ph.get("level")
+        phase_range = ph.get("range")
+        revision = plan.get("revision") if isinstance(plan.get("revision"), str) else None
+        construct_body = construct_card_body(
+            plan_id=plan_id,
+            phase_key=phase_key,
+            worksite=worksite,
+            anchor_mark=anchor_mark,
+            checkout_near=checkout_near,
+            card_id="",
+            plan_revision=revision,
+            level=int(level) if level is not None else None,
+            phase_range=str(phase_range) if phase_range else None,
+            footprint=footprint_label(plan, at_mark=anchor_mark),
+        )
+
     args = [
         "add",
         construct["title"],
         "--assignee",
         construct["assignee"],
         "--body",
-        construct["body"],
+        _with_epic_trailer(construct_body, epic_for),
         "--json",
     ]
     if epic_for:
@@ -98,24 +135,25 @@ def file_bundle(
     if not cid:
         raise SystemExit(f"could not parse construct card id from {created}")
 
-    phase_key = bundle["phase_key"]
-    ph = phase_record(plan, phase_key) or {}
-    level = ph.get("level")
-    phase_range = ph.get("range")
-    revision = plan.get("revision") if isinstance(plan.get("revision"), str) else None
-    body = construct_card_body(
-        plan_id=str(plan.get("plan_id")),
-        phase_key=phase_key,
-        worksite=worksite,
-        anchor_mark=anchor_mark,
-        checkout_near=checkout_near,
-        card_id=cid,
-        plan_revision=revision,
-        level=int(level) if level is not None else None,
-        phase_range=str(phase_range) if phase_range else None,
-        footprint=footprint_label(plan, at_mark=anchor_mark),
-    )
-    _run_kanban(["edit", cid, "--body", body])
+    if plan_id != STARTER_SHELTER_PLAN_ID:
+        ph = phase_record(plan, phase_key) or {}
+        level = ph.get("level")
+        phase_range = ph.get("range")
+        revision = plan.get("revision") if isinstance(plan.get("revision"), str) else None
+        patched = construct_card_body(
+            plan_id=plan_id,
+            phase_key=phase_key,
+            worksite=worksite,
+            anchor_mark=anchor_mark,
+            checkout_near=checkout_near,
+            card_id=cid,
+            plan_revision=revision,
+            level=int(level) if level is not None else None,
+            phase_range=str(phase_range) if phase_range else None,
+            footprint=footprint_label(plan, at_mark=anchor_mark),
+        )
+        _run_kanban(["edit", cid, "--body", patched])
+
     return {"supply_ids": supply_ids, "construct_id": cid}
 
 

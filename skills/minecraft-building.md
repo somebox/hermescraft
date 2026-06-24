@@ -118,6 +118,18 @@ calls on one fill failure, stop and re-read `remaining_cells`.
 
 ## Schematic construct mode (bound CONSTRUCT cards)
 
+**Kanban harness checklist** (follow the card body order; tactics here, not duplicate recipes):
+
+1. `mc bot checkout` … `mc bot release` bracket the work.
+2. `mc task_context set :worksite: --plan … --phase …` (+ `--level` / `--range` when on card).
+3. `mc scene` / `mc observe` before bulk motor.
+4. `mc construct show` — workset, `materials_missing`, guided-edit progress.
+5. Scoped `mc fill` / `mc place` / `mc dig` (workset slices only; no `mc wall` in footprint).
+6. `mc blueprint verify` for the phase slice; then `mc construct end` (final phase: gates on).
+7. `mc bot release` — do not `kanban_complete` while `construct_complete_blocked` is set.
+
+**L0_ground** (no plan cells at dy=0): card may omit `task_context --card-kind CONSTRUCT`; level/drain the footprint per `ground_prep:` on the card, then verify + `construct end`.
+
 When `HERMES_CONSTRUCT_CONTEXT=1` and the kanban card is **CONSTRUCT** with `plan` + `phase` + `worksite`, **`mc task_context set :worksite: --card <id>`** auto-begins a construct session (same pipeline as **`mc construct begin`** for debug).
 
 **Loop:**

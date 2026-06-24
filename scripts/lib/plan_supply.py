@@ -83,6 +83,10 @@ def supply_card_title(
     return f"[SUPPLY] {item} x{count} for {plan_id} ({phase_key})"
 
 
+# Items obtained by mining the (usually buried) stone layer, not surface gather.
+_STONE_SOURCED_ITEMS = frozenset({"cobblestone", "stone", "coal", "coal_ore"})
+
+
 def supply_card_body(
     *,
     plan_id: str,
@@ -96,7 +100,40 @@ def supply_card_body(
     checkout_cap: str = "gatherer",
     source_mark: str = "base_anchor",
 ) -> str:
-    """gv2-valid SUPPLY body tied to a construct phase manifest (includes mc verbs)."""
+    """gv2-valid SUPPLY body tied to a construct phase manifest (includes mc verbs).
+
+    Stone-sourced items (cobblestone/stone/coal) get a mark-if-found-else-mine-down
+    body + a ``mine_site:`` block: stone is almost always buried (scout reports
+    ``0 exposed``), so a surface ``lt_stone_*`` mark usually does NOT exist. Relying on
+    one strands the worker (gv2-2026-06-24-7: a planner-authored cobblestone SUPPLY
+    cited lt_stone_ne/chest_stone/base_anchor — none existed — and the bot drifted 150m
+    onto a water peninsula surface-mining flooded holes). Mine DOWN to the stone layer
+    at a base-adjacent quarry instead."""
+    if item in _STONE_SOURCED_ITEMS:
+        return (
+            f"plan: {plan_id}\n"
+            f"phase: {phase_key}\n"
+            f"anchor: {anchor}\n"
+            f"source_truth: marks\n"
+            f"mc bot checkout --near {checkout_near} --cap miner --mark {source_mark}\n"
+            f"source: if a real surface stone/coal mark exists (confirm via mc marks) "
+            f"go_mark it; ELSE mine DOWN to the stone layer at the quarry below "
+            f"(stone is buried — do NOT surface-mine near water, holes flood)\n"
+            f"mine_site:\n"
+            f"  entry: {anchor}\n"
+            f"  direction: down\n"
+            f"  target_y: 58\n"
+            f"  resource: {item}\n"
+            f"  reuse_existing: true\n"
+            f"destination: {destination} (if {destination} mark is missing, deposit to "
+            f"the nearest base chest_* and register {destination} there)\n"
+            f"quantity: {count} {item}\n"
+            f"withdrawable: yes\n"
+            f"mc collect {item} {count}\n"
+            f"mc deposit {item}\n"
+            f"done_when: {item} count in {destination} >= {count}\n"
+            f"mc bot release\n"
+        )
     return (
         f"plan: {plan_id}\n"
         f"phase: {phase_key}\n"

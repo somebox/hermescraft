@@ -666,6 +666,81 @@ class SchematicConstructValidatorTest(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertTrue(any("phase" in e or "level" in e for e in r["errors"]), r["errors"])
 
+    def test_schematic_base_layer_L0_with_base_anchor_valid(self):
+        """gv2-2026-06-24-4 regression: the bootstrap-filed L0 ground card uses
+        `anchor: base_anchor`, which trips _is_base_layer_construct — but it's a
+        schematic/blueprint card (plan:) whose preflight is the construct-context
+        verbs and whose materials/verify are sibling SUPPLY/VERIFY cards. The manual
+        base-build `preflight:` field requirement must NOT block it (it did: the
+        planner then abandoned the blueprint pipeline for a manual shelter)."""
+        body = (
+            "anchor: base_anchor\n"
+            "source_truth: region sign plan=starter_shelter\n"
+            "worksite: :shelter:\n"
+            "plan: starter_shelter\n"
+            "phase: L0_ground\n"
+            "range: 0..0\n"
+            "done_when: phase L0_ground clean (mc blueprint verify then construct end)\n"
+            "mc bot checkout --near base_anchor --cap builder --mark base_anchor\n"
+            "mc task_context set :shelter: --plan starter_shelter --phase L0_ground "
+            "--range 0..0 --card-kind CONSTRUCT\n"
+            "mc scene\n"
+            "mc observe\n"
+            "footprint: 7x7 at base_anchor\n"
+            "protected_cells: none after survey — use construct workset\n"
+            "mc construct show\n"
+            "mc fill cobblestone (workset slices only; match plan expected_block)\n"
+            "mc blueprint verify starter_shelter --range 0..0\n"
+            "mc construct end --skip-gates\n"
+            "mc bot release\n"
+        )
+        r = validate_card(
+            title="[GENESIS2:P1] [CONSTRUCT] starter_shelter L0 ground",
+            body=body,
+            assignee="colony-builder",
+            registry_verbs={"bot", "checkout", "release", "scene", "observe", "fill",
+                            "task_context", "construct", "show", "end", "blueprint", "verify"},
+        )
+        self.assertTrue(r["ok"], r["errors"])
+        self.assertFalse(any("preflight" in e for e in r["errors"]), r["errors"])
+
+    def test_manual_base_layer_L0_still_requires_preflight(self):
+        """The exemption is schematic-only: a manual (no plan:) base-layer card must
+        still demand preflight:, preserving the build_layer doctrine."""
+        body = (
+            "layer: L0\n"
+            "base_anchor: -183,71,-260\n"
+            "footprint: 7x7 at base_anchor\n"
+            "mc scene\nmc observe\nmc fill cobblestone\n"
+        )
+        r = validate_card(
+            title="[CONSTRUCT] base L0 ground",
+            body=body,
+            assignee="colony-builder",
+        )
+        self.assertTrue(any("preflight" in e for e in r["errors"]), r["errors"])
+
+    def test_rival_starter_shelter_hand_world_fill_rejected(self):
+        body = (
+            "anchor: base_anchor\n"
+            "footprint: 7x7 at base_anchor\n"
+            "protected_cells: none\n"
+            "mc scene\nmc observe\n"
+            "mc fill oak_log -190 72 -250 -184 72 -244\n"
+            "mc bot release\n"
+        )
+        r = validate_card(
+            title="[CONSTRUCT] starter_shelter L3 re-place walls",
+            body=body,
+            assignee="colony-builder",
+            registry_verbs={"bot", "release", "scene", "observe", "fill"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(
+            any("schematic harness" in e for e in r["errors"]),
+            r["errors"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

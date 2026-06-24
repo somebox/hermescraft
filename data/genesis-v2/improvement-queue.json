@@ -307,6 +307,313 @@
       "candidate_direction": "build_layer(origin,footprint,offset,spec) owns coord/y-math; wall ring leaves a DOOR GAP, door placed into gap last; refuse-until-verify_layer; one coherent build. verify_layer gains door-traversable + interior-air gates. See spec doc 'Requirements from gv2-2026-06-22-5'.",
       "expected_metrics": null,
       "notes": "PROPOSED. Highest-leverage next build step; blueprint intent is fine, execution is the gap. Depends on verify_layer (done). Validate on same arm >=2 runs."
+    },
+    {
+      "work_id": "gv2-collect-plain-pos-vec3",
+      "status": "verified",
+      "type": "bug-fix",
+      "title": "collect mining: coerce plain {x,y,z} pool entries to Vec3 before b.blockAt (fix 'pos.floored is not a function')",
+      "source_run_id": "gv2-2026-06-24-2",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G1",
+      "target_gap": "Worker mining cards dead-end: '[zee] [collect] Error mining oak_log at -159,74,-262: pos.floored is not a function [x4] [card:t_864e056d]' -> SUPPLY/gather work cannot complete.",
+      "evidence": [
+        "In-game: zee repeatedly failed to mine oak_log; 4 consecutive 'pos.floored is not a function' errors on one card.",
+        "Root cause: ordering.js trunk-harvest branch (clusters -> orderCells) and all-same-y volume branch both map candidates through orderCells -> normalizeUnit ({...c, id}), which yields PLAIN {x,y,z} objects (no Vec3 prototype). state.pool = sorted.slice() feeds these straight into round 1. mineflayer's b.blockAt(point) calls point.floored() internally, so a plain object throws.",
+        "Instrumented test confirmed: first 5 candidates from `sorted` arrive as plain Object (floored=undefined); only refreshPool() candidates (raw b.findBlocks) are Vec3. The harvest loop CATCHES the per-candidate throw and recovers via refreshPool, so mined_count can still hit target on dense patches -- masking the bug -- but trunk/sparse harvests keep throwing on every `sorted` candidate (the [x4] the operator saw)."
+      ],
+      "change": {
+        "files": [
+          "bot/lib/actions/mining/collect/execute.js: import { Vec3 }; in processCandidate, coerce `pos` to Vec3 at the single chokepoint before any b.blockAt/pos.offset/distanceTo/GoalNear use. Mirrors the reactive.js Vec3-guard pattern.",
+          "bot/test/actions/mining-collect.test.js: regression test with a blockAt stub that mimics mineflayer (requires .floored()); asserts no candidate logs 'pos.floored is not a function'. Fails pre-fix (reproduces exact error string), passes post-fix."
+        ]
+      },
+      "deterministic_check": "node --check passes; 53 mining tests pass (mining-collect + collect-ordering-kernel + mining-dig + mining-scout). New test fails without the coercion (logged '[collect] Error mining dirt at -2,63,-2: pos.floored is not a function'), passes with it.",
+      "expected_metrics": {
+        "note": "Same-arm validation signal: oak_log/trunk SUPPLY cards complete instead of dead-ending; board_quality.cards no longer shows repeated collect dig_failed on a single trunk card. No 'pos.floored' in action logs.",
+        "arm": "standard/mimo-v2.5/emergent"
+      },
+      "notes": "VERIFIED 2026-06-24 (offline: syntax + unit + regression). Bot loads code at boot, so this bites at next restart_bodies/relaunch -- the gv2-2026-06-24-2 poller already running predates it. UNCOMMITTED pending operator GO."
+    },
+    {
+      "work_id": "gv2-schematic-bootstrap-cli",
+      "status": "verified",
+      "type": "bug-fix",
+      "title": "schematic shelter bootstrap: speak the real hermes kanban CLI (create/body-trailer-epic/link), not add/--for/--after/edit --body",
+      "source_run_id": "gv2-2026-06-24-2",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G2",
+      "target_gap": "The schematic starter_shelter workflow (the feature the operator asked to exercise) NEVER files a single card: maybe_bootstrap_schematic_shelter_for_run raises every poller cycle ('[poller] shelter render failed: kanban failed: usage: hermes kanban ...'). schematic_shelter_bootstrapped never set -> retries forever; the run is effectively plain emergent, not schematic.",
+      "evidence": [
+        "gv2-2026-06-24-2 poller.log: '[poller] shelter render failed: kanban failed: usage: hermes kanban [-h] [--board <slug>] {init,boards,create,...}' repeated every cycle (~30+ min).",
+        "Root cause: file_starter_shelter_sequence (scripts/lib/gv2_schematic_shelter.py) was authored against a CLI that does not exist. Real `hermes kanban` has verb `create` (not `add`); has NO --for / --after flags; `create` accepts only --parent; `edit` takes --result, NOT --body (so the create-'pending'-then-edit-body two-step could never set a body).",
+        "Verified against live CLI: `hermes kanban create --help` (only --parent), `hermes kanban edit --help` (--result/--summary/--metadata, no --body). Sibling scripts/construct-plan-cards.py has the same imaginary-CLI bug (shells scripts/kanban facade which uses create/--epic/--depends-on) \u2014 left for a follow-up; not in the poller hot path.",
+        "Facade scripts/kanban shows the correct semantics: --epic = membership via body trailer (---\\nepic: <id>), NOT a link; --depends-on = prereq via `hermes kanban link <parent> <child>`. Using --parent to an [EPIC] card causes the epic-parent deadlock this project already hit (project_genesis_v2_decomp_gaps)."
+      ],
+      "change": {
+        "files": [
+          "scripts/lib/gv2_schematic_shelter.py: verb add->create; epic membership via new _with_epic_trailer() body trailer (not a flag); ordering via post-create `link <prev> <new>` prereq edges; dropped the create-then-edit two-step. _construct_body_for_phase no longer embeds --card {card_id} (worker resolves its own id from HERMES_KANBAN_TASK), enabling one-shot create of the construct card.",
+          "scripts/genesis2_lib.py: kanban_run adapter is now JSON-tolerant (link prints non-JSON/empty; we only need create's id) and raises only on a real CLI non-zero exit.",
+          "scripts/tests/test_gv2_schematic_shelter.py: regression test locks the CLI contract (no add/--for/--after/edit; epic in body trailer; ordering via link edges to real created ids; 4 phases each with construct+verify + chest card)."
+        ]
+      },
+      "deterministic_check": "84 tests pass (test_gv2_schematic_shelter + test_genesis2_lib). New test asserts the exact bug class can't return: no `add` verb, no `--for`/`--after`, no `edit`, epic trailer present, link prereq chain present, construct body has no literal --card.",
+      "expected_metrics": {
+        "note": "Next relaunch (fresh poller) should log '[poller] starter_shelter plan patched, site prepped, schematic cards filed' once, set config schematic_shelter_bootstrapped=true, and file the L0->L1->L3->L4 SUPPLY/CONSTRUCT/VERIFY chain + chest card under epic P1. No 'shelter render failed' lines. This is the first run that actually exercises the schematic path.",
+        "arm": "standard/mimo-v2.5/emergent"
+      },
+      "notes": "VERIFIED 2026-06-24 (offline: syntax + unit + regression). Bot/poller load code at boot, so the running gv2-2026-06-24-2 poller cannot benefit and keeps failing -> relaunch needed to actually exercise the schematic workflow. UNCOMMITTED pending operator GO."
+    },
+    {
+      "work_id": "gv2-no-rcon-site-prep",
+      "status": "verified",
+      "type": "doctrine-change",
+      "title": "schematic bootstrap: rcon site-prep (cobble foundation + water drain) now opt-in; default OFF \u2014 agents own leveling/drainage via L0",
+      "source_run_id": "gv2-2026-06-24-3",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G2",
+      "target_gap": "Operator doctrine (2026-06-24): no automatic wipes or rcon block changes to the structure/site; standard region + schematic + building procedures only. The deterministic cobble-foundation + water-drain rcon backstop masked whether agents can plan+execute a viable base.",
+      "change": {
+        "files": [
+          "scripts/genesis2_lib.py: maybe_bootstrap_schematic_shelter_for_run gates the shelter_site_prep_commands rcon (cobble foundation + apron water-drain) + forceload behind GENESIS2_SHELTER_SITE_PREP (default OFF). When OFF, sets shelter_site_prep_skipped=true and files cards only. reposition_shelter_region kept (region JSON metadata only, no blocks)."
+        ]
+      },
+      "deterministic_check": "syntax OK; 7 shelter/site_prep command-builder tests still pass (they test the builder, not the gating). No test asserted the bootstrap runs rcon by default.",
+      "expected_metrics": {
+        "note": "gv2-2026-06-24-3 poller.log: bootstrap (once base_anchor marked) logs 'schematic cards filed' with NO site-prep fills; config shows shelter_site_prep_skipped=true; the L0_ground SUPPLY card now carries leveling/drainage materials the agents must gather+place. base_viability still scores the finished pad (fail-closed) \u2014 now it measures AGENT work, not the backstop.",
+        "arm": "standard/mimo-v2.5/emergent"
+      },
+      "notes": "VERIFIED 2026-06-24 offline. Live on gv2-2026-06-24-3 (fresh bodies + poller, new code). See memory feedback_no_rcon_structure_prep. Companion note: poller line 62 log 'EMERGENT mode \u2014 render disabled' is STALE \u2014 the schematic bootstrap call (line 215) is gated only by retro_mode, NOT emergent, so it DOES fire in emergent runs once base_anchor exists. Fix the log message in a follow-up.",
+      "uncommitted": true
+    },
+    {
+      "work_id": "gv2-board-logs-cross-run-bleed",
+      "status": "verified",
+      "type": "bug-fix",
+      "title": "reinit: purge on-disk board worker-logs (logs/<card>.log) \u2014 prior-run state bled into new workers despite DB purge + memory wipe",
+      "source_run_id": "gv2-2026-06-24-3",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G1",
+      "target_gap": "Operator: 'bots still working on the base; memories did not get wiped \u2014 acting on previous work.' A fresh run inherited prior-run state.",
+      "evidence": [
+        "gv2-2026-06-24-3: builder profile memory was truncated at mint (17:44, only this-run timestamps remain) yet re-acquired old base_anchor (-167,71,-247) + old-task lessons (t_31fc54e7) by 17:57, and BUILT a redundant 7x7 shelter at -167 while the legit schematic build ran at the scout's new site -183.",
+        "grep -rliE 't_31fc54e7|-167,71,-247' ~/.hermes -> signature existed ONLY in ~/.hermes/kanban/boards/genesis-v2/logs/*.log (1862 transcripts accumulated across all runs) + the rederived profile memory. purge_board_db clears DB rows but never the on-disk logs dir.",
+        "World reset is reliable (reset-proc-lab evacuate->mv delete+OTP confirm->create+verify); confirmed by probe: after the gv2-2026-06-24-4 relaunch the old -167 base (was 86 cobble+25 planks) is GONE -> the -167 blocks were this-run rebuild from recalled logs, not an un-reset world."
+      ],
+      "change": {
+        "files": [
+          "scripts/genesis2_lib.py: new purge_board_logs() (deletes <board>/logs/*.log); called from reinit_board() after purge_board_db. Prior-run logs already captured into the run dir at stop, so clearing the live board logs at reinit is a safe clean start.",
+          "scripts/tests/test_genesis2_lib.py: 2 tests (removes *.log, keeps non-log; missing-dir no-op)."
+        ]
+      },
+      "deterministic_check": "86 tests pass (test_genesis2_lib + test_gv2_schematic_shelter). Live: relaunch logged '[reinit] purged 1862 stale board worker-log(s)'; logs dir 1862->0; old -167 base wiped by world reset.",
+      "expected_metrics": {
+        "note": "gv2-2026-06-24-4 workers start with no prior-run knowledge; no build at -167; single base at the scout-chosen site.",
+        "arm": "standard/mimo-v2.5/emergent"
+      },
+      "notes": "VERIFIED live on gv2-2026-06-24-4. UNCOMMITTED. See memory project_genesis_cross_run_state_vectors. Unproven survivor to watch if carryover recurs: per-profile checkpoints/store/ (git, untouched by mint wipe).",
+      "uncommitted": true
+    },
+    {
+      "work_id": "gv2-blueprint-pipeline-unblock",
+      "status": "verified",
+      "type": "bug-fix",
+      "title": "unblock blueprint construction: validator exempts schematic base-layer cards from manual preflight; bodies launch with HERMES_CONSTRUCT_CONTEXT=1",
+      "source_run_id": "gv2-2026-06-24-4",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G2",
+      "target_gap": "Operator: blueprint construction couldn't be tested \u2014 the schematic L0 CONSTRUCT card was blocked, so the planner abandoned the blueprint pipeline for a manual 7x7 shelter.",
+      "evidence": [
+        "gv2-2026-06-24-4 t_c75761cf [CONSTRUCT] starter_shelter L0 ground blocked in 0s by the deterministic card gate: 'schema-missing: base-layer CONSTRUCT missing preflight:'. Planner MANAGE (t_f13e7939) then filed a manual shelter (t_b50d82e9) + supply, leaving the blueprint pipeline blocked.",
+        "Cause 1 (validator): gv2_card_validator _is_base_layer_construct fires on the L0 card (title 'L0' + body 'base_anchor') and demanded a manual `preflight:` field. But schematic/blueprint cards (plan:) express preflight as construct-context verbs and split materials/verify into sibling SUPPLY/VERIFY cards \u2014 so the requirement is wrong for them and blocked our OWN bootstrap-filed cards.",
+        "Cause 2 (bodies): constructScopingEnabled() reads HERMES_CONSTRUCT_CONTEXT from the BODY process env; the genesis bodies were launched without it (mint only added it to worker env_passthrough), so mc construct/blueprint no-op'd ('feature disabled on this bot', seen in gv2-2026-06-24-3 builder memory). restart_bodies() (the pinned-spawn launcher) was the authoritative path and lacked the var \u2014 it overrode the genesis-v2.sh ensure_body launch."
+      ],
+      "change": {
+        "files": [
+          "scripts/lib/gv2_card_validator.py: base-layer CONSTRUCT preflight/materials_required/verify_on_site FIELD requirements now skip schematic cards (plan: present); chest/furnace + source_truth:handoff invariants still apply to all.",
+          "scripts/genesis2_lib.py restart_bodies(): bodies launch with HERMES_CONSTRUCT_CONTEXT=1 (authoritative pinned-spawn/reset launcher).",
+          "scripts/genesis-v2.sh ensure_body(): same env var on the fallback launcher.",
+          "scripts/tests/test_gv2_card_validator.py: +2 tests (schematic base-layer L0 with base_anchor valid; manual base-layer still requires preflight)."
+        ]
+      },
+      "deterministic_check": "126 tests pass (card_validator + genesis2_lib + schematic). Real blocked L0 body now validates ok=True; manual L0 still errors 'missing preflight:'.",
+      "expected_metrics": {
+        "note": "gv2-2026-06-24-6: schematic L0 CONSTRUCT NOT blocked; bodies construct-enabled (HERMES_CONSTRUCT_CONTEXT=1 confirmed in all 3 body procs); blueprint L0->L1->L3->L4 pipeline executes (mc construct show/blueprint verify work) instead of the planner falling back to a manual shelter.",
+        "arm": "standard/mimo-v2.5/emergent"
+      },
+      "notes": "VERIFIED offline + body env confirmed live on gv2-2026-06-24-6. UNCOMMITTED.",
+      "uncommitted": true
+    },
+    {
+      "work_id": "gv2-construct-blueprint-this-binding",
+      "status": "verified",
+      "type": "bug-fix",
+      "title": "construct/blueprint verbs crashed once construct context went live \u2014 lost-this op-dispatch ('Cannot read properties of undefined reading construct_show/blueprint_verify')",
+      "source_run_id": "gv2-2026-06-24-6",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G2",
+      "target_gap": "With HERMES_CONSTRUCT_CONTEXT=1 finally on the bodies, mc construct show and mc blueprint verify threw 'Cannot read properties of undefined (reading construct_show/blueprint_verify)' \u2014 so the schematic L0 card could not execute (also: 'mc fill cobblestone: no cells in workset after construct clip (49 denied)', downstream of construct_show never populating the workset).",
+      "evidence": [
+        "gv2-2026-06-24-6 action log (pip): construct->error 'Cannot read properties of undefined (reading construct_show)'; blueprint->error '...reading blueprint_verify'; place_fill->error 'no cells in workset after construct clip (49 denied)'; level->error 'mc level is disabled during construct context' (proves construct context WAS active \u2014 the body-env fix worked).",
+        "Cause: bot/lib/actions/construct/index.js construct(body) dispatched ops via this.construct_begin/show/end, and blueprints/index.js blueprint(body) via this.blueprint_*. The registry/dispatcher invokes the top-level verb DETACHED from the action object, so this===undefined and this.<method> throws. Latent until construct context was enabled (the verbs were never exercised live before)."
+      ],
+      "change": {
+        "files": [
+          "bot/lib/actions/construct/index.js: dispatch via closure ref `api.*` not `this.*` (const api = {...}; return api).",
+          "bot/lib/actions/blueprints/index.js: same closure-ref fix for blueprint subcommand dispatch.",
+          "bot/test/actions/construct-contract.test.js: +2 regression tests invoking the verb DETACHED (asserts no TypeError, reaches the handler)."
+        ]
+      },
+      "deterministic_check": "19 construct/blueprint tests pass (incl. 2 new detached-dispatch); action-registry/manifest/cli-sync pass. node --check clean.",
+      "expected_metrics": {
+        "note": "Next run: mc construct show / mc blueprint verify return structured results (not crash); construct_show populates _constructWorkset; mc fill cobblestone has cells (not '49 denied'); L0->L4 blueprint pipeline actually builds. Watch: planner also files a parallel MANUAL shelter at base_anchor (gv2-4/6) \u2014 coordination issue to address if it confounds the blueprint test.",
+        "arm": "standard/mimo-v2.5/emergent"
+      },
+      "notes": "VERIFIED offline. Needs body code reload (relaunch). Cascade this session to unblock blueprint construction: validator preflight exemption + body HERMES_CONSTRUCT_CONTEXT + THIS binding. Open: workset-empty (expected downstream of this fix \u2014 confirm live), planner double-shelter.",
+      "uncommitted": true
+    },
+    {
+      "work_id": "gv2-stone-supply-mine-down",
+      "status": "verified",
+      "type": "bug-fix",
+      "title": "cobblestone/stone SUPPLY: mark-if-found-else-mine-down (stone is buried; surface lt_stone mark usually can't exist)",
+      "source_run_id": "gv2-2026-06-24-7",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G2",
+      "target_gap": "Operator: 'Mox mining cobblestone without a plan; stone was not identified for mining.' The blueprint L1_slab cobblestone SUPPLY can't source stone.",
+      "evidence": [
+        "gv2-2026-06-24-7 t_4bdb2555 [SUPPLY] cobblestone x49 (authored by colony-planner) cited 'source: lt_stone_ne or lt_coal_surface' + 'mc go_mark lt_stone_ne' \u2014 but lt_stone_ne, chest_stone, AND base_anchor marks ALL do not exist. Worker reached 45/49 then BLOCKED.",
+        "Worker block report: 'All stone is buried underground (scout confirmed: 0 exposed, 199 buried)'; surface-mining holes flood; bot drifted ~150m east onto a water peninsula and could not pathfind back to mine_entrance.",
+        "Root cause: a scout cannot drop a surface lt_stone_* mark on buried stone (reports 'stone: not_enough'), and neither the planner-authored card nor the schematic supply body told the worker to MINE DOWN to the stone layer. Marks present: chest_food, chest_wood, lt_water_ne, mine_entrance, tunnel_start \u2014 no stone source."
+      ],
+      "change": {
+        "files": [
+          "scripts/lib/plan_supply.py supply_card_body(): stone-sourced items (cobblestone/stone/coal) now emit a mark-if-found-else-mine-down body with a mine_site: block (entry=base_anchor, direction=down, target_y=58) \u2014 checkout --cap miner; deposit fallback if chest_stone mark missing; never surface-mine near water.",
+          "skills/genesis-v2-worker-card-schema.md: added Stone/cobblestone SUPPLY doctrine (mark-if-found else mine down; never cite an unconfirmed mark; stone is buried) so the PLANNER authors it correctly (the live broken card was planner-authored)."
+        ]
+      },
+      "deterministic_check": "48 tests pass (plan_supply + card_validator + schematic). New cobblestone body validates ok=True (mining-intent with mine_site satisfies the validator).",
+      "expected_metrics": {
+        "note": "Next run: cobblestone SUPPLY mines down to the stone layer at a base quarry (no dependency on a phantom lt_stone mark, no 150m water drift); L1_slab gets its 49 cobblestone; blueprint pipeline progresses past L1.",
+        "arm": "standard/mimo-v2.5/emergent"
+      },
+      "notes": "VERIFIED offline. Needs relaunch (bootstrap supply gen + planner skill load at run start). BROADER PATTERN observed: the emergent planner re-authors what the schematic bootstrap already files (duplicate shelter + supply cards) and cites phantom marks \u2014 a planner/bootstrap coordination gap to address next. Also gv2-7 site was poor (water peninsula, base_anchor mark missing, chests scattered 97-150m).",
+      "uncommitted": true
+    },
+    {
+      "work_id": "gv2-na-1",
+      "status": "proposed",
+      "type": "planner_prompt_or_skill",
+      "title": "Close gap: board_quality.gv2_invalid 12 vs max 0",
+      "source_run_id": "gv2-2026-06-24-7",
+      "evidence": [
+        "board_quality.gv2_invalid 12 vs max 0"
+      ],
+      "predicted_delta": {
+        "establishment": 5
+      },
+      "suggested_test": "scripts/tests/test_gv2_establishment_ladder.py",
+      "lifts_level": null
+    },
+    {
+      "work_id": "gv2-pr-gv2-2026-06-24-7-0",
+      "status": "proposed",
+      "type": "mc_motor_fix",
+      "title": "Investigate motor hotspot move",
+      "source_run_id": "gv2-2026-06-24-7",
+      "evidence": [
+        "metrics"
+      ]
+    },
+    {
+      "work_id": "gv2-postmortem-24-7-structural",
+      "status": "verified",
+      "type": "postmortem-fixes",
+      "title": "gv2-2026-06-24-7 postmortem: VERIFY dialect, base_anchor coord-nav, planner discipline, base-layer false-positives",
+      "source_run_id": "gv2-2026-06-24-7",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G1",
+      "target_gap": "Score G0 (28) capped by board_quality.gv2_invalid=12; no coherent structure built (8 scattered cobble + 2 chests, no slab/walls/roof); motor errors place 68%/move 52%.",
+      "evidence": [
+        "12 invalid cards categorized: 3 bootstrap VERIFY cards rejected (validator required gv2-verify-layer.py + layer/gate, but schematic uses mc blueprint verify); L4 roof+fixtures + 9x9 farm mis-flagged base-layer; 4x cobblestone SUPPLY + 3x base_anchor SCOUT re-authored by planner with invalid variants + invented verbs (mark_register, rescue_request).",
+        "base_anchor root cascade: lives in shared locations-base.json (reconciled from pip) but marks are body-local \u2014 the builder body couldn't resolve `go_mark base_anchor`/`checkout --mark base_anchor`, so every checkout failed. Bootstrap read the file, not the mark store.",
+        "Re-scan after fixes: gv2_invalid 12 -> 8; the remaining 8 are all genuinely-malformed planner-authored cards (now correctly rejected), addressed by planner-discipline guidance."
+      ],
+      "change": {
+        "files": [
+          "scripts/lib/gv2_card_validator.py: (#1) VERIFY cards with plan: + `mc blueprint verify` are exempt from the manual gv2-verify-layer.py/layer/gate requirements; (#4) _is_base_layer_construct no longer fires on bare 'layer' prose \u2014 requires explicit layer:L0|L1, title L0/L1+base, or phase:L0|L1 (stops farm/roof false-positives).",
+          "scripts/genesis2_lib.py: (#3) bootstrap files cards with checkout --near <coord> (authoritative base coords) instead of the body-local base_anchor mark name \u2014 workers reach base reliably regardless of mark propagation.",
+          "data/genesis-v2/emergent-planner-soul.md: (#2) hard rules \u2014 real verbs only (mc mark, not mark_register; no rescue_request), NO re-authoring failing cards with [RETRY]/[RESCUE] suffixes (edit/block once), layer:L0|L1 only for base-shelter cards, register base_anchor via `mc mark` before referencing it."
+        ]
+      },
+      "deterministic_check": "131 tests pass (card_validator + schematic + plan_supply + genesis2_lib). gv2-7 board re-scan: 12->8 invalid, remaining 8 are real planner errors.",
+      "expected_metrics": {
+        "note": "Next run: gv2_invalid driven toward 0 (bootstrap VERIFY/CONSTRUCT/supply cards all valid; planner stops authoring fake-verb/duplicate cards); base_anchor checkout succeeds; blueprint pipeline can advance per-layer.",
+        "arm": "standard/mimo-v2.5/emergent"
+      },
+      "notes": "DEEPER #3 ITEM REMAINING: marks are body-local \u2014 base_anchor registered on one body isn't visible to others. Coord-nav sidesteps it for the bootstrap, but cross-body mark propagation (so go_mark/--mark resolve everywhere) is a subsystem fix to scope next. Also: locations-base.json is a GLOBAL cross-run file (like board logs) \u2014 verify wipe_marks clears it each run.",
+      "uncommitted": true
+    },
+    {
+      "work_id": "gv2-construct-phase-aware-blocks",
+      "status": "verified",
+      "type": "bug-fix",
+      "title": "construct body phase-aware: L0_ground=no-fill prep; L1/L3/L4 fill ACTUAL block (was hardcoded cobblestone for all)",
+      "source_run_id": "gv2-2026-06-24-8",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G2",
+      "target_gap": "Blueprint stalls at L0: 'mc fill cobblestone: no cells in workset (49 denied)'. L0_ground (range 0..0) has 0 plan cells but the body hardcoded mc fill cobblestone for every phase; L3/L4 would also fill cobblestone (wrong block).",
+      "evidence": [
+        "gv2-2026-06-24-{4,6,7,8}: place_fill error 'no cells in workset after construct clip (49 denied)' at L0. Plan: cobblestone@dy1(L1), oak_log@dy3-4(L3), oak_planks@dy5(L4), 0 cells@dy0(L0)."
+      ],
+      "change": {
+        "files": [
+          "scripts/lib/gv2_schematic_shelter.py: _phase_place_blocks() computes a phase's actual blocks from plan cells by dy range; _construct_body_for_phase emits a level/drain prep body (no construct fill) when a phase has 0 cells (L0_ground), and `mc fill <block>` per distinct block otherwise. +regression test."
+        ]
+      },
+      "deterministic_check": "132 tests pass. All 4 phase bodies validate; L0 no workset-fill, L1=cobblestone, L3=oak_log, L4=oak_planks.",
+      "uncommitted": true
+    },
+    {
+      "work_id": "gv2-planner-no-shelter-duplication",
+      "status": "verified",
+      "type": "doctrine-change",
+      "title": "planner SOUL: shelter is system-owned \u2014 do NOT decompose/author shelter layer cards (duplicate the schematic bootstrap)",
+      "source_run_id": "gv2-2026-06-24-8",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G1",
+      "target_gap": "Planner authors its own Shelter L0/L1/roof/fixtures CONSTRUCT cards in parallel with the bootstrap's starter_shelter L0-L4 chain \u2014 duplicates + all invalid (missing footprint). gv2-2026-06-24-8: 5 such cards.",
+      "evidence": [
+        "gv2-2026-06-24-8 board: planner-authored [CONSTRUCT] Shelter L0/L1/roof/fixtures all 'missing footprint:'; co-exist with valid bootstrap starter_shelter cards. (Planner discipline DID stop re-auth churn + fake verbs this run \u2014 0 of each.)"
+      ],
+      "change": {
+        "files": [
+          "data/genesis-v2/emergent-planner-soul.md: establishment seq step 6 \u2014 shelter is SYSTEM-OWNED (runtime auto-files the starter_shelter pipeline once base_anchor set); planner must not author shelter/slab/wall/roof/fixtures cards, only feed SUPPLY + unblock + comment."
+        ]
+      },
+      "deterministic_check": "guidance edit; takes effect on next mint/relaunch.",
+      "notes": "Validated improvement on gv2-8: planner-discipline rules (real verbs, no re-author) WORKED (0 fake-verb, 0 suffix-retry cards). base_anchor cross-body propagation still flaky (planner go_mark base_anchor \u2192 'No location') \u2014 coord-nav covers bootstrap cards; cross-body mark propagation remains the deeper open item.",
+      "uncommitted": true
+    },
+    {
+      "work_id": "gv2-pr-gv2-2026-06-24-9-0",
+      "status": "proposed",
+      "type": "mc_motor_fix",
+      "title": "Investigate motor hotspot collect",
+      "source_run_id": "gv2-2026-06-24-9",
+      "evidence": [
+        "metrics"
+      ]
     }
   ]
 }

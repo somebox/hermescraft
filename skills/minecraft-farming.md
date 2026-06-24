@@ -134,13 +134,17 @@ After `kanban_show`, if the card lists a plot rectangle and optional `worksite:`
 
 1. Run **`mc verify_plot …`** once before the first `mc till`.
 2. If `ok: false` with **`TASK_SPEC_INVALID`**: `kanban_comment` with the verify summary, then **`kanban_block`** with reason from `next_action_hint` (e.g. `task_spec_invalid:worksite_coverage:wheat1`), **`mc task_context clear`**, exit. Do not loop 81 tills on a bad spec.
-3. **`UNCHANGED`** on `mc till` is **not** region permission — Paper/hoe or bad cell. Read `next_action_hint`; use **`mc till_area`** for large plots.
-4. **`stepped_off_target` in the response data** is informational, not an error: when you call `mc till` or `mc plant` on the cell the bot is currently standing on (or one above it for plant), the action moves the bot laterally one block first so the native interaction works — no need to manually step aside yourself. Look for `data.stepped_off_target: {x, y, z, dx, dz, dy}` on success and a `(stepped off target)` suffix in the result string.
+3. Before bulk tilling, confirm the plot can stay hydrated: water must be within 4 blocks of farmland, or you must be able to place a source with `mc bucket_empty`. If no reachable `lt_water_*` mark / surface water / bucket source exists, `kanban_block` with `no_water:<nearest_known_water_or_none>` and stop. Dry farmland reverts to dirt; re-tilling it is wasted work.
+4. If `verify_plot` / `farm_status` shows `terrain_non_tillable` or mostly `unplantable`, block with `terrain_non_tillable:<summary>` instead of tilling around stone/rock.
+5. **`UNCHANGED`** on `mc till` is **not** region permission — Paper/hoe or bad cell. Read `next_action_hint`; use **`mc till_area`** for large plots only after the water/terrain checks pass.
+6. **`stepped_off_target` in the response data** is informational, not an error: when you call `mc till` or `mc plant` on the cell the bot is currently standing on (or one above it for plant), the action moves the bot laterally one block first so the native interaction works — no need to manually step aside yourself. Look for `data.stepped_off_target: {x, y, z, dx, dz, dy}` on success and a `(stepped off target)` suffix in the result string.
 
 | Block reason prefix | Meaning |
 |---|---|
 | `task_spec_invalid:worksite_coverage:*` | Plot bbox outside worksite disc — Steward fixes region/card |
 | `task_spec_invalid:terrain_*` | Wrong Y / not flat / floating grass — Steward adds `[PREP]` or fixes Y on card |
+| `no_water:*` | No reachable water source and no bucket source can be placed — planner hauls water or relocates |
+| `terrain_non_tillable:*` | Plot is too rocky / solid / non-soil for farming — planner files prep or relocates |
 | `region_blocked:*` | Real dig/place deny (see minecraft-mining) |
 
 ```

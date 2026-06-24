@@ -77,6 +77,11 @@ Implementation notes:
 1. **`[VERIFY]` card kind** — planner files a `[VERIFY]` after each CONSTRUCT layer; the
    worker runs `verify_layer` and `kanban_block`s with `offenders` if the gate fails. Uses
    the existing observe/verify card pattern.
+
+   **Schematic `starter_shelter` pipeline:** poller-filed VERIFY cards use
+   `mc blueprint verify starter_shelter --range` / `--level` (plan slice). Manual free-form
+   pads without `plan:` use `scripts/gv2-verify-layer.py` — see
+   `skills/genesis-v2-worker-card-schema.md` VERIFY dialect table.
 2. **Scorecard viability sub-metric** — a post-run `verify_layer(roof)` interior-air +
    `verify_layer(L0)` drained check, so a flooded pad **cannot** score `shell=yes`
    uncontested (closes the "establishment lied" gap). Fail-closed.

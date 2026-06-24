@@ -395,7 +395,15 @@ def restart_bodies(*, mc_host: str | None = None, mc_port: int | None = None, ti
                # the bot's stuck/blocked advise hints (gv2-2026-06-16-1: 62 dead
                # attempts). Must match the genesis-v2.sh ensure_body launch; this is
                # the path that runs on reset_world/operator-pinned-spawn restarts.
-               "MC_SUPPRESS_ADVISE_HINTS": "1"}
+               "MC_SUPPRESS_ADVISE_HINTS": "1",
+               # Enable construct-context scoping on the body so the schematic
+               # blueprint pipeline works (mc construct show/begin/end, plan workset
+               # binding, in-footprint mutation filtering). constructScopingEnabled()
+               # reads this from the body's own env; without it the verbs no-op and
+               # the planner abandons the blueprint pipeline (gv2-2026-06-24-4/5).
+               # THIS is the authoritative launcher for pinned-spawn/reset restarts —
+               # it overrides ensure_body, so the var must be set here too.
+               "HERMES_CONSTRUCT_CONTEXT": "1"}
         log = open(f"/tmp/{user.lower()}-bot.log", "a")
         subprocess.Popen([node, "bot/server.js"], cwd=str(REPO_ROOT), env=env,
                          stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -688,8 +696,31 @@ def wipe_world_mines(world: str) -> None:
                 sp.write_text(json.dumps(doc, indent=2) + "\n")
 
 
-def shelter_site_prep_commands(world: str, ox: int, oy: int, oz: int) -> list[str]:
-    """Drain/apron foundation under the 7×7 footprint minimum (ox,oy,oz); no shell walls."""
+def shelter_site_prep_commands(
+    world: str,
+    ox: int,
+    oy: int,
+    oz: int,
+    *,
+    clear_build_volume: bool | None = None,
+) -> list[str]:
+    """Safety apron under the 7×7 footprint minimum (ox, oy, oz) — not worker build volume.
+
+    Default gv2 bootstrap only:
+      - cobble foundation + margin (solid footing, plugs void/water under pad)
+      - drain standing water at foot/head height in the apron
+
+    Workers clear trees/terrain via filed CONSTRUCT phases (L0/L1…), not RCON air wipes.
+
+    Optional ``clear_build_volume`` (or env ``GENESIS2_SHELTER_AIR_PREP=1``) runs the
+    legacy 7×7×4 ``fill … air replace`` over the footprint — **test/ops only**, not live runs.
+    """
+    if clear_build_volume is None:
+        clear_build_volume = os.environ.get("GENESIS2_SHELTER_AIR_PREP", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
     margin = 2
     x0, x1 = ox - margin, ox + 6 + margin
     z0, z1 = oz - margin, oz + 6 + margin
@@ -697,8 +728,11 @@ def shelter_site_prep_commands(world: str, ox: int, oy: int, oz: int) -> list[st
     cmds: list[str] = [
         f"fill {x0} {floor_y - 1} {z0} {x1} {floor_y} {z1} minecraft:cobblestone",
         f"fill {x0} {floor_y + 1} {z0} {x1} {floor_y + 3} {z1} minecraft:air replace minecraft:water",
-        f"fill {ox} {floor_y + 1} {oz} {ox + 6} {floor_y + 4} {oz + 6} air replace",
     ]
+    if clear_build_volume:
+        cmds.append(
+            f"fill {ox} {floor_y + 1} {oz} {ox + 6} {floor_y + 4} {oz + 6} air replace",
+        )
     return [f"execute in {world} run {c}" for c in cmds]
 
 
@@ -891,6 +925,7 @@ def maybe_bootstrap_schematic_shelter_for_run(run_id: str) -> bool:
     # ("cannot import name ... from lib.gv2_schematic_shelter", gv2-2026-06-24-1).
 
     cfg = load_config(run_id)
+    cfg.setdefault("run_id", run_id)
     if cfg.get("schematic_shelter_bootstrapped"):
         return False
     base = _base_anchor_coords()
@@ -905,29 +940,66 @@ def maybe_bootstrap_schematic_shelter_for_run(run_id: str) -> bool:
         base,
         run_rendered_dir=run_dir_path / "rendered",
     )
-    if not cfg.get("shelter_site_prepped"):
+    # Operator doctrine (2026-06-24): NO automatic rcon block changes to the
+    # structure/site. Agents level + drain the pad themselves via the L0_ground
+    # CONSTRUCT phase, estimating materials — standard region/schematic/building
+    # procedures only. The deterministic cobble-foundation + water-drain backstop
+    # is now opt-in (GENESIS2_SHELTER_SITE_PREP=1) for test/ops; default OFF.
+    site_prep_on = os.environ.get("GENESIS2_SHELTER_SITE_PREP", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if site_prep_on and not cfg.get("shelter_site_prepped"):
         batch = shelter_site_prep_commands(world, ox, oy, oz)
         rcon_in(world, [f"forceload add {ox >> 4} {oz >> 4}"])
         for i in range(0, len(batch), 40):
             _rcon(batch[i : i + 40])
         cfg["shelter_site_prepped"] = True
+        # Persist before kanban filing — filing can fail/retry; replaying RCON prep
+        # would re-apply cobble/water (and optional air wipe) over worker progress.
+        save_config(cfg)
+    elif not site_prep_on and not cfg.get("shelter_site_prep_skipped"):
+        cfg["shelter_site_prepped"] = False
+        cfg["shelter_site_prep_skipped"] = True
+        save_config(cfg)
 
     footprint_anchor = {"x": ox, "y": oy, "z": oz}
-    reposition_shelter_region(footprint_anchor, run_id)
+    reposition_shelter_region(footprint_anchor, run_id)  # region metadata only — no block changes
 
     epic_ids = cfg.get("epic_ids") or []
     epic_p1 = str(epic_ids[0]) if epic_ids else None
     after = _find_card_id_by_title_substring("base-clear")
 
     def kanban_run(args: list[str]) -> dict:
-        return _kanban_json(args)
+        # JSON-tolerant: `create`/etc. pass --json and return a dict we need
+        # (the new card id); `link` (ordering edges) prints a human line, not
+        # JSON, and we don't read its output. Raise only on a real CLI failure.
+        p = _hermes(args, timeout=90)
+        if p.returncode != 0:
+            raise RuntimeError(f"kanban failed: {p.stderr[:400] or p.stdout[:400]}")
+        out = (p.stdout or "").strip()
+        if not out:
+            return {}
+        try:
+            return json.loads(out)
+        except json.JSONDecodeError:
+            return {}
 
+    # Navigate by COORDINATE, not the base_anchor mark name. base_anchor lives in the
+    # shared locations-base.json (what _base_anchor_coords reads) but marks are
+    # body-local: `mc go_mark base_anchor` / `checkout --mark base_anchor` resolve
+    # against the WORKING body's store, where base_anchor was often never propagated
+    # (gv2-2026-06-24-7: registered on pip, reconciled to the file, but the builder
+    # body couldn't resolve it → every checkout failed → pipeline cascade). We hold the
+    # authoritative coords here, so workers checkout --near "<x> <y> <z>" reliably.
+    checkout_coord = f"{int(base['x'])} {int(base['y'])} {int(base['z'])}"
     filed = file_starter_shelter_sequence(
         kanban_run,
         plan=plan,
         epic_for=epic_p1,
         anchor_mark="base_anchor",
-        checkout_near="base_anchor",
+        checkout_near=checkout_coord,
         after_card_id=after,
         base_anchor=base,
     )
@@ -1215,6 +1287,30 @@ def purge_board_db() -> int:
         conn.close()
 
 
+def purge_board_logs() -> int:
+    """Delete the dedicated board's on-disk per-card worker logs.
+
+    purge_board_db() clears the board DB rows, but the worker transcripts under
+    ``<board>/logs/<card>.log`` persist on disk across EVERY run (1862 accumulated by
+    gv2-2026-06-24-3). New-run workers surface these stale logs via card-context /
+    memory recall and act on prior-run state: a builder re-built a shelter at a
+    REMEMBERED prior base_anchor (-167,71,-247) even though its profile memory had been
+    wiped at mint — the old lessons came back from t_31fc54e7.log et al. Prior-run logs
+    are already captured into the run dir at stop (capture_run_artifacts), so clearing
+    the LIVE board logs at reinit is a safe clean-start. Returns count removed."""
+    logs_dir = _board_db_path().parent / "logs"
+    if not logs_dir.is_dir():
+        return 0
+    removed = 0
+    for p in logs_dir.glob("*.log"):
+        try:
+            p.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def reinit_board() -> None:
     _hermes(["boards", "create", BOARD])
     p = _hermes(["init"])
@@ -1229,6 +1325,16 @@ def reinit_board() -> None:
         purged = purge_board_db()
     except Exception:
         purged = -1
+    # Also clear the on-disk per-card worker logs — purge_board_db only clears DB
+    # rows, but stale <board>/logs/<card>.log transcripts bleed prior-run state into
+    # new workers (gv2-2026-06-24-3: builder rebuilt the old -167 base from a recalled
+    # log despite a wiped profile memory). Run-scoped clean start.
+    try:
+        log_n = purge_board_logs()
+        if log_n:
+            sys.stderr.write(f"[reinit] purged {log_n} stale board worker-log(s)\n")
+    except Exception:
+        pass
     if purged <= 0:
         try:
             lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
@@ -1404,12 +1510,19 @@ def site_fit_brief() -> dict:
 
 
 def file_site_advisory(run_id: str) -> str | None:
-    """If the chosen base_anchor isn't buildable (no nearby stone), file ONE advisory
-    card so the planner sources stone or relocates before a doomed cobble BUILD. Dedup.
+    """If the chosen base_anchor has site problems (no nearby stone for build, or no
+    water within range for the co-located P2 farm), file ONE advisory card so the
+    planner can source stone, haul water, relocate the anchor, or adjust scope. Dedup.
+    This is an advisory surface for team coordination — the planner decides; the
+    poller does not hard-block base commit or phase gates on water alone.
     Returns card id, or None when no advisory is needed / already filed."""
     brief = site_fit_brief()
     anchor = brief.get("base_anchor")
-    if not anchor or anchor.get("buildable"):
+    if not anchor:
+        return None
+    flags = anchor.get("flags") or []
+    has_water_problem = any(f.startswith("no_water_within") for f in flags)
+    if anchor.get("buildable") and not has_water_problem:
         return None
     tag = "SITE-ADVISORY base_anchor"
     try:
@@ -1428,10 +1541,14 @@ def file_site_advisory(run_id: str) -> str | None:
         f"{anchor['stone_dist']} (mark {anchor['stone_mark']}), water {anchor['water_dist']}, "
         f"wood {anchor['wood_dist']}. Best candidate: {best.get('name')} "
         f"({best.get('score')}/5).\n\n"
-        f"You are the PLANNER. Decide via the BOARD: (a) file a SUPPLY card to source/haul "
-        f"cobble to base before any cobble BUILD, (b) relocate base_anchor to the best "
-        f"candidate, or (c) scope the shelter plank-only (no cobble). Then `kanban_complete` "
-        f"this advisory."
+        f"You are the PLANNER. Decide via the BOARD and file follow-ups:\n"
+        f"(a) stone missing: file SUPPLY (haul cobble) or relocate before BUILD.\n"
+        f"(b) water missing (or far): the P2 FARM epic tills beside water; file a water-haul "
+        f"(gatherer buckets from nearest lt_water and places at/near farm plot), relocate "
+        f"base_anchor/farm site, or accept a dry farm (will not hydrate/grow). The FARM "
+        f"worker will block with no_water rather than loop if it cannot establish hydration.\n"
+        f"(c) scope the shelter plank-only if stone is the blocker.\n"
+        f"Then `kanban_complete` this advisory."
     )
     r = _hermes(["create", title, "--body", body, "--assignee", "colony-planner", "--json"])
     if r.returncode == 0:
@@ -2799,7 +2916,7 @@ def _capture_chest_snapshots() -> dict | None:
     return {"captured_at": gl._iso_utc(), "chests": chests}
 
 
-def _capture_base_snapshot(world: str = "genesis2") -> dict | None:
+def _capture_base_snapshot(world: str = "genesis2", *, run_id: str | None = None) -> dict | None:
     """Read-only rcon block snapshot of the base box across y=anchor±2, for the
     base_viability scorecard gate (verify_layer L0). Best-effort; None if no anchor or
     rcon/classify unavailable. Captured at stop while the world still exists."""
@@ -2820,7 +2937,10 @@ def _capture_base_snapshot(world: str = "genesis2") -> dict | None:
     cells = [(x, z) for z in range(oz - 3, oz + 8) for x in range(ox - 3, ox + 8)]
     layers: dict[str, dict] = {}
     try:
-        for y in (oy - 2, oy - 1, oy, oy + 1, oy + 2):
+        # Capture high enough to score the starter_shelter shell physically:
+        # base_anchor.y is one above the plan footprint origin, so walls/roof live
+        # at oy+2..oy+4. Earlier snapshots stopped at oy+2 and could only prove L0.
+        for y in range(oy - 2, oy + 5):
             cls = classify_cells(world, y, cells, rcon_in)
             layers[str(y)] = {
                 "counts": dict(Counter(cls.values())),
@@ -2834,8 +2954,89 @@ def _capture_base_snapshot(world: str = "genesis2") -> dict | None:
     if not layers:
         sys.stderr.write("[base-snapshot] skipped: no layers probed\n")
         return None
-    return {"origin": [ox, oy, oz], "footprint": [7, 7],
+    snap = {"origin": [ox, oy, oz], "footprint": [7, 7],
             "captured_from": "stop (live world)", "layers": layers}
+    shell = _capture_starter_shelter_shell(world, run_id=run_id)
+    if shell:
+        snap["shell"] = shell
+    return snap
+
+
+def _capture_starter_shelter_shell(world: str = "genesis2", *, run_id: str | None = None) -> dict | None:
+    """Exact, plan-cell shell predicate for scorecard honesty.
+
+    The broad terrain classifier can return `unknown` in large layer probes. For
+    shell scoring, ask the server the precise expected block for each wall/roof
+    cell and count missing/wrong from that.
+    """
+    # Only score shell against starter_shelter when this run is in schematic context.
+    # Otherwise we'd apply a shelter-specific truth gate to unrelated runs.
+    if not run_id:
+        return None
+    rr = run_dir(run_id)
+    rendered = rr / "rendered" / "starter_shelter-plan.json"
+    if rendered.is_file():
+        plan_path = rendered
+    else:
+        cfg = load_config(run_id)
+        if not (cfg.get("schematic_shelter_bootstrapped") or cfg.get("schematic_shelter_cards")):
+            return None
+        # Fallback for runs that have schematic metadata but no rendered copy.
+        plan_path = DATA_DIR / "ops" / "plans" / "starter_shelter-plan.json"
+    plan = gl._load_json(plan_path, {})
+    if not isinstance(plan, dict):
+        return None
+    anchor = (plan.get("anchor") or {}).get("coords")
+    if not (isinstance(anchor, list) and len(anchor) == 3):
+        return None
+    ax, ay, az = (int(anchor[0]), int(anchor[1]), int(anchor[2]))
+    checks: list[tuple[str, int, int, int, str]] = []
+    for cell in plan.get("cells") or []:
+        loc = cell.get("local")
+        block = cell.get("block") or cell.get("expected_block")
+        if not (isinstance(loc, list) and len(loc) == 3 and block):
+            continue
+        dx, dy, dz = (int(loc[0]), int(loc[1]), int(loc[2]))
+        phase = "walls" if dy in (3, 4) else "roof" if dy == 5 else None
+        if phase:
+            checks.append((phase, ax + dx, ay + dy, az + dz, str(block)))
+    if not checks:
+        return None
+    statuses: list[bool] = []
+    try:
+        for i in range(0, len(checks), 80):
+            batch = checks[i:i + 80]
+            cmds = [f"execute positioned {x} {y} {z} if block ~ ~ ~ minecraft:{block}"
+                    for (_phase, x, y, z, block) in batch]
+            out = rcon_in(world, cmds)
+            found = [m == "passed" for m in re.findall(r"Test (passed|failed)", out)]
+            if len(found) != len(batch):
+                return None
+            statuses.extend(found)
+    except Exception as exc:
+        sys.stderr.write(f"[base-snapshot] shell predicate failed: {exc}\n")
+        return None
+    out = {
+        "present": True,
+        "walls": {"expected": 0, "matched": 0, "missing": 0, "wrong": 0},
+        "roof": {"expected": 0, "matched": 0, "missing": 0, "wrong": 0},
+    }
+    for (phase, _x, _y, _z, _block), matched in zip(checks, statuses):
+        rec = out[phase]
+        rec["expected"] += 1
+        if matched:
+            rec["matched"] += 1
+        else:
+            # Exact predicate cannot distinguish wrong vs missing without a second
+            # palette scan; for milestone honesty, non-match is enough.
+            rec["missing"] += 1
+    out["complete"] = (
+        out["walls"]["expected"] > 0
+        and out["roof"]["expected"] > 0
+        and out["walls"]["matched"] == out["walls"]["expected"]
+        and out["roof"]["matched"] == out["roof"]["expected"]
+    )
+    return out
 
 
 def capture_run_artifacts(run_id: str | None = None) -> dict:
@@ -2995,7 +3196,7 @@ def capture_run_artifacts(run_id: str | None = None) -> dict:
 
     # Read-only base block snapshot for the base_viability gate (verify_layer L0).
     try:
-        base_snap = _capture_base_snapshot((cfg or {}).get("world", "genesis2"))
+        base_snap = _capture_base_snapshot((cfg or {}).get("world", "genesis2"), run_id=run_id)
         if base_snap:
             base_snap["run_id"] = run_id
             world_dest.mkdir(parents=True, exist_ok=True)

@@ -78,7 +78,7 @@ import sqlite3
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -167,6 +167,29 @@ def _db_rw() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def _tasks_column_names(conn: sqlite3.Connection) -> frozenset[str]:
+    """Column names on ``tasks`` for schema-tolerant reads (genesis-v2 vs landfolk)."""
+    return frozenset(row[1] for row in conn.execute("PRAGMA table_info(tasks)"))
+
+
+def _pick_task_columns(conn: sqlite3.Connection, names: list[str]) -> list[str]:
+    have = _tasks_column_names(conn)
+    return [n for n in names if n in have]
+
+
+def _task_col_sql(conn: sqlite3.Connection, names: list[str]) -> str:
+    picked = _pick_task_columns(conn, names)
+    return ", ".join(picked) if picked else "id"
+
+
+def _row_get(row: sqlite3.Row, key: str, default=None):
+    """Safe read when optional facade columns (size, location_*) are absent."""
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return default
 
 
 def _write_event(conn: sqlite3.Connection, task_id: str, kind: str,
@@ -667,11 +690,21 @@ def cmd_add(args: argparse.Namespace) -> int:
 
     # Write size + location directly (Hermes create doesn't know about them).
     with _db_rw() as conn:
-        conn.execute(
-            "UPDATE tasks SET size = ?, location_x = ?, location_y = ?, location_z = ? "
-            "WHERE id = ?",
-            (size, loc_x, loc_y, loc_z, tid),
-        )
+        cols = _tasks_column_names(conn)
+        sets: list[str] = []
+        params: list[Any] = []
+        if "size" in cols:
+            sets.append("size = ?")
+            params.append(size)
+        if loc_x is not None and "location_x" in cols:
+            sets.extend(["location_x = ?", "location_y = ?", "location_z = ?"])
+            params.extend([loc_x, loc_y, loc_z])
+        if sets:
+            params.append(tid)
+            conn.execute(
+                f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
 
     if args.json:
         print(json.dumps({
@@ -1212,22 +1245,24 @@ def cmd_board(args: argparse.Namespace) -> int:
     cutoff_recent = now - 15 * 60
 
     with _db() as conn:
+        infl_cols = _task_col_sql(
+            conn,
+            ["id", "title", "assignee", "status", "size", "started_at"],
+        )
         in_flight = list(conn.execute(
-            "SELECT id, title, assignee, status, size, started_at "
-            "FROM tasks WHERE status = 'running' ORDER BY started_at"
+            f"SELECT {infl_cols} FROM tasks WHERE status = 'running' ORDER BY started_at"
         ))
-        # READY excludes [EPIC] cards — epics stay `ready` for a whole
-        # phase as orchestrator-continuous trackers. They get their own
-        # EPICS OPEN section below; double-listing them here would
-        # crowd the lane Steward actually dispatches from.
+        ready_cols = _task_col_sql(
+            conn,
+            ["id", "title", "assignee", "size", "priority"],
+        )
         ready = list(conn.execute(
-            "SELECT id, title, assignee, size, priority "
-            "FROM tasks WHERE status = 'ready' AND title NOT LIKE '%[EPIC]%' "
-            "ORDER BY priority DESC, created_at"
+            f"SELECT {ready_cols} FROM tasks WHERE status = 'ready' "
+            "AND title NOT LIKE '%[EPIC]%' ORDER BY priority DESC, created_at"
         ))
+        blocked_cols = _task_col_sql(conn, ["id", "title", "assignee", "size"])
         blocked_rows = list(conn.execute(
-            "SELECT id, title, assignee, size FROM tasks WHERE status = 'blocked' "
-            "ORDER BY created_at"
+            f"SELECT {blocked_cols} FROM tasks WHERE status = 'blocked' ORDER BY created_at"
         ))
         epics = list(conn.execute(
             "SELECT id, title, status FROM tasks "
@@ -1269,13 +1304,13 @@ def cmd_board(args: argparse.Namespace) -> int:
             "board": BOARD,
             "in_flight": [
                 {"id": r["id"], "title": r["title"], "assignee": r["assignee"],
-                 "size": r["size"], "runtime_s": now - (r["started_at"] or now),
+                 "size": _row_get(r, "size"), "runtime_s": now - (_row_get(r, "started_at") or now),
                  "last": note}
                 for r, note in in_flight_with_notes
             ],
             "ready": [
                 {"id": r["id"], "title": r["title"], "assignee": r["assignee"],
-                 "size": r["size"], "priority": r["priority"],
+                 "size": _row_get(r, "size"), "priority": _row_get(r, "priority"),
                  "prereqs_undone": [u["id"] for u in undone]}
                 for r, undone in ready_with_prereqs
             ],
@@ -1308,8 +1343,8 @@ def cmd_board(args: argparse.Namespace) -> int:
 
     print(f"IN-FLIGHT ({len(in_flight_with_notes)})")
     for r, note in in_flight_with_notes:
-        runtime = _format_age(now - (r["started_at"] or now))
-        size = r["size"] or "—"
+        runtime = _format_age(now - (_row_get(r, "started_at") or now))
+        size = _row_get(r, "size") or "—"
         title = (r["title"] or "")[:50]
         tail = f" · last: \"{note[:50]}\"" if note else ""
         print(f"  {r['assignee'] or '—':<10} {r['id']}  size {size:<3} runtime {runtime:<5} {title}{tail}")
@@ -1319,7 +1354,7 @@ def cmd_board(args: argparse.Namespace) -> int:
     print()
     print(f"READY ({len(ready_with_prereqs)})")
     for r, undone in ready_with_prereqs[:6]:
-        size = r["size"] or "—"
+        size = _row_get(r, "size") or "—"
         title = (r["title"] or "")[:46]
         if undone:
             mark = f"prereqs ⏳ waits {undone[0]['id']}"
@@ -1391,11 +1426,16 @@ def cmd_card(args: argparse.Namespace) -> int:
     """Detailed card view with location, size, full comments, and recent
     events. Like ``show`` but tuned for the new schema."""
     with _db() as conn:
+        card_cols = _task_col_sql(
+            conn,
+            [
+                "id", "title", "body", "assignee", "status", "priority",
+                "size", "location_x", "location_y", "location_z",
+                "created_at", "started_at", "completed_at", "claim_lock",
+            ],
+        )
         row = conn.execute(
-            "SELECT id, title, body, assignee, status, priority, "
-            "       size, location_x, location_y, location_z, "
-            "       created_at, started_at, completed_at, claim_lock "
-            "FROM tasks WHERE id = ?",
+            f"SELECT {card_cols} FROM tasks WHERE id = ?",
             (args.task_id,),
         ).fetchone()
         if row is None:
@@ -1416,12 +1456,17 @@ def cmd_card(args: argparse.Namespace) -> int:
 
     if args.json:
         loc = None
-        if row["location_x"] is not None:
-            loc = {"x": row["location_x"], "y": row["location_y"], "z": row["location_z"]}
+        lx = _row_get(row, "location_x")
+        if lx is not None:
+            loc = {
+                "x": lx,
+                "y": _row_get(row, "location_y"),
+                "z": _row_get(row, "location_z"),
+            }
         print(json.dumps({
             "id": row["id"], "title": row["title"], "status": row["status"],
-            "assignee": row["assignee"], "priority": row["priority"],
-            "size": row["size"], "location": loc,
+            "assignee": row["assignee"], "priority": _row_get(row, "priority"),
+            "size": _row_get(row, "size"), "location": loc,
             "body": visible, "trailer": trailer,
             "depends_on": [dict(p) for p in parents],
             "dependency_of": [dict(c) for c in children],
@@ -1438,10 +1483,14 @@ def cmd_card(args: argparse.Namespace) -> int:
 
     print(f"{row['id']}  ─ {row['status']} ─ {row['assignee'] or '—'}")
     print(f"  {row['title']}")
-    size = row["size"] or "—"
-    loc_s = (f"{row['location_x']},{row['location_y']},{row['location_z']}"
-             if row["location_x"] is not None else "—")
-    print(f"  size: {size}  ·  location: {loc_s}  ·  priority: {row['priority'] or 0}")
+    size = _row_get(row, "size") or "—"
+    lx = _row_get(row, "location_x")
+    loc_s = (
+        f"{lx},{_row_get(row, 'location_y')},{_row_get(row, 'location_z')}"
+        if lx is not None
+        else "—"
+    )
+    print(f"  size: {size}  ·  location: {loc_s}  ·  priority: {_row_get(row, 'priority') or 0}")
     if trailer.get("epic"):
         print(f"  epic: {trailer['epic']}")
     if row["claim_lock"]:

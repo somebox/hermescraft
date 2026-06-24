@@ -87,10 +87,10 @@ epics:
            the base so workers can path in/out and a perimeter wall can sit on
            prepared ground (live-run "built into terrain / cannot exit" stalls
            came from skipping this). CRITICAL SCOPE: the 7×7 shelter footprint
-           (base_anchor ± 3 in X/Z) and its solid, drained foundation are
-           PRE-RENDERED at boot — only the **site prep pad** (foundation + water
-           drain) is applied via rcon; the 7×7 shell comes from the schematic
-           card chain above. Do NOT clear_strip or level_ground over the 7×7
+           (base_anchor ± 3 in X/Z) is built by the **starter_shelter schematic
+           card chain** (L0_ground levels/drains in-world; L1–L4 via construct
+           workset). RCON site prep is **off by default** (`GENESIS2_SHELTER_SITE_PREP=0`).
+           Do NOT clear_strip or level_ground over the 7×7
            (gv2-2026-06-16-1: a worker dug itself into the shelter and got stuck).
            Clear/level only the APRON + APPROACH OUTSIDE base_anchor ± 3. Card
            body, literal lines:
@@ -114,8 +114,7 @@ epics:
                bridge it walkable with
                `mc deck <x1> <z1> <x2> <z2> surface_y=<feet_y> block=cobblestone`
                (decks the air row above the water — bots drown in unfilled water).
-               The 7×7 footprint itself is already drained + floored by the boot
-               render; only the apron needs this.
+               Only the apron needs this — the 7×7 pad is L0_ground CONSTRUCT work.
              `mc bot release`
            Wire BASE-CLEAR `after:` BASE-SELECT, and BUILD `after:` BASE-CLEAR.
         4. GATHER (colony-gatherer) — first steps MUST satisfy tools before
@@ -138,8 +137,8 @@ epics:
            passes (walk through the door gap both ways).
 
       Do NOT `kanban_complete` this epic — it auto-completes when the P1 gate
-      passes (base_anchor mark + >=2 chest_* marks [pre-rendered] + active shelter
-      region). If
+      passes (base_anchor mark + >=2 chest_* marks + active shelter
+      region after schematic VERIFY chain). If
       worker cards for this phase already exist on the board, do not create
       duplicates: just report status and stop. Your job is to decompose and
       monitor, never to declare the phase done.
@@ -166,8 +165,11 @@ epics:
 
       Decompose into:
         1. FARM (assignee colony-farmer) — `mc bot checkout --near <lt_water_*
-           coords> --cap farm`; till a plot beside water (~5×5–6×6); plant seeds;
+           coords or farm plot> --cap farm`; confirm water source reachable (or
+           place one via bucket); till a plot beside water (~5×5–6×6); plant seeds;
            mark `farm_wheat` (or `farm_*`); `mc bot release`. Literal `mc` verbs.
+           If no water is reachable for hydration, the worker blocks with
+           `no_water` (see agent-farmer.md); file a haul/relocate follow-up.
            SIZE ↔ GOAL: the food gate is `food.target_min` (currently 16; see
            data/base-goals.yaml), and the render pre-stocks a matching starter
            pantry in `chest_food`. A ~5×5–6×6 plot yields ~8–12 bread/harvest, so
