@@ -35,10 +35,15 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ./scripts/run-functional-fast.sh
 ./scripts/run-functional-core.sh   # @functional_core smoke only
 
+# execution-kernel bulk verbs (dig_area _useKernel, level, wall):
+.venv/bin/pytest tests/functional/terrain/test_execution_kernel_bulk.py -v -m functional
+
+# Optional: kernel ordering for clear_strip / level column sweep on the bot process:
+# HERMES_EXEC_KERNEL=1 ./scripts/run-tester-bot.sh
+
 # stair egress (stair_down + mc retrace): @slow
 .venv/bin/pytest tests/functional/mining/stairs/ -v -m slow
 
-```bash
 # one test
 .venv/bin/pytest tests/functional/mining/test_foo.py::test_name -v
 ./scripts/combat-suite.sh           # combat @slow only
@@ -59,4 +64,5 @@ Functional arena work does **not** need an API key. Integration/agent tiers do.
 ## See also
 
 - Tier 2 rcon-only fixtures (no bot): `scripts/run-fixture.sh prep|cleanup data/test-fixtures/…`
+- Blueprint plan paste/capture (RCON, no bot): [`place-schematic-rcon.py`](../../scripts/place-schematic-rcon.py), [`capture-schematic-rcon.py`](../../scripts/capture-schematic-rcon.py) — [`blueprints-grabcraft.md`](../specs/world/blueprints-grabcraft.md) (Terminology + RCON section)
 - Coord check: `python3 scripts/check-arena-coords.py --strict`

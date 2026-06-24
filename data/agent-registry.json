@@ -66,11 +66,11 @@
     },
     {
       "name": "Barley",
-      "api_port": 3004,
+      "api_port": 3008,
       "role": "food",
       "world": "world",
       "model": "nvidia/nemotron-3-super-120b-a12b:free",
-      "viewer_port": 4004,
+      "viewer_port": 4008,
       "radar_port": null
     }
   ]

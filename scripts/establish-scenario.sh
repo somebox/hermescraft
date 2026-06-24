@@ -213,10 +213,13 @@ echo "== landfolk start ($WORKERS) =="
 scripts/landfolk-control.sh start --profiles "$WORKERS"
 
 echo "== wait for bot listeners (each up to 60s) =="
-declare -A WORKER_PORTS=( [steward]=3005 [gatherer]=3001 [flint]=3002 [mason]=3003 [barley]=3004 )
+RESOLVE="$ROOT/scripts/resolve-agent-model.py"
+MODELS="$ROOT/data/agent-models.json"
 IFS=',' read -ra _WK <<< "$WORKERS"
 for wk in "${_WK[@]}"; do
-  port="${WORKER_PORTS[$wk]:-}"
+  # Capitalize first letter to match agent-models.json keys (Steward, Gatherer, …)
+  _agent="$(python3 -c "print('${wk}'.strip().capitalize())")"
+  port="$(BASE_API_PORT=3001 python3 "$RESOLVE" api-port "$_agent" "$MODELS" 2>/dev/null || echo "")"
   if [[ -z "$port" ]]; then echo "  $wk: no port mapping — skipping wait"; continue; fi
   for i in $(seq 1 60); do
     if curl -s -m 1 "http://localhost:$port/status" >/dev/null 2>&1; then

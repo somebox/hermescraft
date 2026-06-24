@@ -13,6 +13,8 @@
 #   API_PORT      (default 3004 — conftest expects this)
 #   VIEWER_PORT   (default 4004 — avoid 4001 conflict with Steve)
 #   LOG_DIR       (default /tmp/hermescraft)
+#   HERMES_CONSTRUCT_CONTEXT=1 — construct session + mutation filters (canary / functional construct tests)
+#   HERMES_EXEC_KERNEL=1 or HERMES_BULK_MOTOR=1 — bulk motor on dig_area/level/clear_strip (optional; dig_area also accepts _useKernel in POST body)
 
 set -euo pipefail
 
@@ -46,6 +48,9 @@ cd "$SCRIPT_DIR/bot"
 MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="Tester" \
   BOT_ACCEPT_SERVER_CHAT=true \
   API_PORT="$API_PORT" VIEWER_PORT="$VIEWER_PORT" \
+  HERMES_CONSTRUCT_CONTEXT="${HERMES_CONSTRUCT_CONTEXT:-}" \
+  HERMES_EXEC_KERNEL="${HERMES_EXEC_KERNEL:-}" \
+  HERMES_BULK_MOTOR="${HERMES_BULK_MOTOR:-}" \
   nohup node server.js > "$LOG_DIR/bot-tester.log" 2>&1 &
 disown
 BOT_PID=$!

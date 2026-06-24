@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import types
 
 import pytest
 
@@ -58,11 +59,12 @@ class _FakeMCRconException(Exception):
 
 @pytest.fixture
 def fake_mcrcon(monkeypatch):
-    """Patch the mcrcon module so LocalTcpRcon talks to _FakeMCRcon."""
+    """Patch the mcrcon module so LocalTcpRcon talks to _FakeMCRcon (no pip dep)."""
     _FakeMCRcon.instances.clear()
-    import mcrcon
-    monkeypatch.setattr(mcrcon, "MCRcon", _FakeMCRcon)
-    monkeypatch.setattr(mcrcon, "MCRconException", _FakeMCRconException)
+    fake_mod = types.ModuleType("mcrcon")
+    fake_mod.MCRcon = _FakeMCRcon
+    fake_mod.MCRconException = _FakeMCRconException
+    monkeypatch.setitem(sys.modules, "mcrcon", fake_mod)
     return _FakeMCRcon
 
 

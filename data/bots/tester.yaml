@@ -1,3 +1,5 @@
+# Test-only bot — not listed under agents in data/agent-models.json.
+# HTTP :3004 is reserved; landfolk fleet must not bind this port.
 username: Tester
 api_port: 3004
 role: tester

@@ -109,7 +109,8 @@ if [[ $tester_up -eq 0 || $KEEP_TESTER -eq 0 ]]; then
   else
     echo "  Starting Tester (not running)"
   fi
-  "$SCRIPT_DIR/scripts/run-tester-bot.sh" >/dev/null 2>&1 || {
+  HERMES_CONSTRUCT_CONTEXT="${HERMES_CONSTRUCT_CONTEXT:-1}" \
+    "$SCRIPT_DIR/scripts/run-tester-bot.sh" >/dev/null 2>&1 || {
     echo "ERROR: run-tester-bot.sh failed; see $LOG_DIR/bot-tester.log" >&2
     exit 1
   }

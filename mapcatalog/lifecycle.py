@@ -22,6 +22,7 @@ def evac_players(client: LifecycleRcon, cfg: ServerConfig) -> None:
 
     Human players on other worlds (e.g. campaign ``world``) are untouched.
     Only names in ``evac.bot_players`` are mvtp'd when present in proc-lab.
+    Never list ``Tester`` there — port 3004 is pytest-only.
     """
     w = cfg.world_name
     hub = cfg.hub_world

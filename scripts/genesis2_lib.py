@@ -241,18 +241,21 @@ def evac_to_hub_before_world_reset(*, hub: str = "landfolk-test", observer: str 
 
     Never kicks — only Multiverse teleports. Observer goes first so they stay on
     the server in ``hub`` (e.g. landfolk-test) while the run world is recreated,
-    then ``setup_observer`` / ``ensure_observer_watching`` mvtp them back."""
+    then ``setup_observer`` / ``ensure_observer_watching`` mvtp them back.
+    Test-only ``Tester`` is never moved by genesis world-reset evac."""
+    from scripts.lib.port_registry import is_test_mc_username
+
     observer = observer or default_observer_name()
     players = online_players()
     bots = [b["user"] for b in BODY_POOL.values()]
     order: list[str] = []
-    if observer in players:
+    if observer in players and not is_test_mc_username(observer):
         order.append(observer)
     for u in bots:
-        if u not in order:
+        if u not in order and not is_test_mc_username(u):
             order.append(u)
     for p in players:
-        if p not in order:
+        if p not in order and not is_test_mc_username(p):
             order.append(p)
     if not order:
         return []
@@ -1428,7 +1431,11 @@ RETRO_AGENTS = ("colony-scout", "colony-gatherer", "colony-builder", "colony-far
                 "colony-miner", "colony-road", "colony-planner")
 RETRO_CARD_PRIORITY = 50  # dispatcher: priority DESC — retros beat normal worker cards
 RETRO_WAIT_DEFAULT_S = 240
-CAP_RETRO_WAIT_S = 120
+# Match the stop-path wait: gv2-2026-06-22-5 filed all 7 retros at the 2h cap but only
+# 3/7 finished in 120s (7 reflection agents serialize through limited concurrency) ->
+# retro_pending=4 -> compare_safe=false. The retros DID file (the fix works); they just
+# need the full window to complete.
+CAP_RETRO_WAIT_S = 240
 RETRO_BODY = (
     "RETROSPECTIVE — REFLECTION ONLY. The colony run is ending. Do NOT checkout a body,\n"
     "do NOT run `mc` verbs, do NOT run `skill_view`, do NOT do any in-world work.\n\n"
@@ -2710,6 +2717,7 @@ def _capture_base_snapshot(world: str = "genesis2") -> dict | None:
     rcon/classify unavailable. Captured at stop while the world still exists."""
     anchor = _base_anchor_coords()
     if not anchor:
+        sys.stderr.write("[base-snapshot] skipped: no base_anchor mark\n")
         return None
     try:
         from collections import Counter
@@ -2717,7 +2725,8 @@ def _capture_base_snapshot(world: str = "genesis2") -> dict | None:
         if str(REPO_ROOT) not in sys.path:
             sys.path.insert(0, str(REPO_ROOT))
         from scripts.lib.gv2_layer_verify import classify_cells
-    except Exception:
+    except Exception as exc:
+        sys.stderr.write(f"[base-snapshot] skipped: import failed: {exc}\n")
         return None
     ox, oy, oz = anchor["x"], anchor["y"], anchor["z"]
     cells = [(x, z) for z in range(oz - 3, oz + 8) for x in range(ox - 3, ox + 8)]
@@ -2729,7 +2738,13 @@ def _capture_base_snapshot(world: str = "genesis2") -> dict | None:
                 "counts": dict(Counter(cls.values())),
                 "cells": {f"{x},{z}": m for (x, z), m in cls.items() if m not in ("air", "unknown")},
             }
-    except Exception:
+    except Exception as exc:
+        # Don't swallow silently — gv2-2026-06-22-5 returned None at cap (worked manually
+        # minutes later), so the failure was transient; logging surfaces the real cause.
+        sys.stderr.write(f"[base-snapshot] rcon/classify failed at y-probe: {exc}\n")
+        return None
+    if not layers:
+        sys.stderr.write("[base-snapshot] skipped: no layers probed\n")
         return None
     return {"origin": [ox, oy, oz], "footprint": [7, 7],
             "captured_from": "stop (live world)", "layers": layers}

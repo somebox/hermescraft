@@ -30,7 +30,7 @@ Pure JS logic. No Minecraft server, no bot running, no external dependencies.
 cd bot && npm test
 ```
 
-~160 `*.test.js` files under `bot/test/` (including `cli/`, `runtime/`, `integration/`), **1300+** cases in the default `npm test` run (~15–20 s locally). Uses Node's built-in
+~160 `*.test.js` files under `bot/test/` (including `cli/`, `runtime/execution-kernel/`, `runtime/`, `integration/`), **1300+** cases in the default `npm test` run (~15–20 s locally). Uses Node's built-in
 `node:test` + `node:assert/strict`. Set `HERMES_VALIDATE=1` (via `npm test`) so action envelopes are validated in contract tests.
 
 Includes a **contract test** (`bot/test/cli-action-sync.test.js`) that
@@ -63,6 +63,8 @@ scripts/run-fixture.sh cleanup data/test-fixtures/L0/L0.1_health_connected.yaml
 
 Requires SSH to the host running the Paper server (default `ubuntu-host`
 docker exec → rcon-cli). No bot needed — this only manipulates the world.
+
+**Blueprint plans (RCON):** Stamp or capture committed plans under `data/ops/plans/` with [`scripts/place-schematic-rcon.py`](../../scripts/place-schematic-rcon.py) / [`scripts/capture-schematic-rcon.py`](../../scripts/capture-schematic-rcon.py) (`--at` / `--at-player`, optional `--sign-front`). Same JSON as bot blueprint tooling — see [`docs/specs/world/blueprints-grabcraft.md`](../specs/world/blueprints-grabcraft.md).
 
 ## Tier 3 — Python functional tests (pytest)
 

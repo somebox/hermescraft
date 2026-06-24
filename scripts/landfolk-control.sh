@@ -570,6 +570,9 @@ start_bot() {
     _build_dirty=0
   fi
 
+  local bot_env_json
+  bot_env_json="$(python3 "$RESOLVE_AGENT_MODEL_PY" bot-env "$name" "$AGENT_MODELS_JSON" 2>/dev/null || echo '{}')"
+
   (
     cd "$BOT_DIR"
     export MC_HOST MC_PORT PAPERMCP_PORT PAPERMCP_TOKEN
@@ -581,11 +584,16 @@ start_bot() {
     export BUILD_BRANCH="$_build_branch"
     export BUILD_DIRTY="$_build_dirty"
     export BUILD_CAPTURED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    exec -a "landfolk:bot-loop:$name" bash /dev/stdin "$name" "$port" "$viewer_port" "$bot_agent_model" "$bot_agent_provider" "$LOG_DIR" <<'BOT_LOOP_BODY'
+    exec -a "landfolk:bot-loop:$name" bash /dev/stdin "$name" "$port" "$viewer_port" "$bot_agent_model" "$bot_agent_provider" "$LOG_DIR" "$bot_env_json" <<'BOT_LOOP_BODY'
 set -uo pipefail
 name="$1"; port="$2"; viewer_port="$3"
 bot_agent_model="$4"; bot_agent_provider="$5"
 log_dir="$6"
+bot_env_json="${7:-{}}"
+if [ -n "$bot_env_json" ] && [ "$bot_env_json" != "{}" ]; then
+  eval "$(python3 -c 'import json,shlex,sys; d=json.loads(sys.argv[1]);
+for k,v in d.items(): print(f"export {k}={shlex.quote(str(v))}")' "$bot_env_json")"
+fi
 name_lower="${name,,}"
 trap '' HUP
 _bot_stop=false

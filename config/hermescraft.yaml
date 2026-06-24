@@ -44,6 +44,10 @@ bot:
   roles:
     flint: http://localhost:3001
     tester: http://localhost:3004
+  # Reserved test HTTP port — only data/bots/tester.yaml + run-tester-bot.sh.
+  # Landfolk agents in data/agent-models.json must NOT use this port (Barley → 3008).
+  test_reserved_api_port: 3004
+  test_mc_username: Tester
 
 models:
   # Default model + provider for tests that don't pin one. Tests that

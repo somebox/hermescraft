@@ -98,7 +98,7 @@ VARIANT=establishment.mapping scripts/establish-run.sh --fresh-disc 1001 --archi
 | `server.local.yaml` | Copy from `server.local.yaml.example`; `world.name: proc-lab` |
 | Minecraft | Server reachable; RCON/SSH per profile (homelab: `ssh` + `docker exec … rcon-cli`) |
 | Hermes | `hermes` on PATH (`/Users/foz/.local/bin/hermes` on this rig); keys in `$HOME/.hermes/.env` or env |
-| Models | `data/agent-models.json` ports: Gatherer 3001, Flint 3002, Mason 3003, Barley 3004, Steward 3005. **Steward stays on `deepseek/deepseek-v4-flash:exacto`** — run-11 evidence: `:pro` tier produced `exit=142` (SIGPIPE) on round=1 and never reassigned EXPLORE cards. Orchestrator role doesn't need the depth bump. |
+| Models | `data/agent-models.json` ports: Gatherer 3001, Flint 3002, Mason 3003, Steward 3005, Barley 3008. **Tester** uses reserved **3004** only (`data/bots/tester.yaml`, not in `agents`). **Steward stays on `deepseek/deepseek-v4-flash:exacto`** — run-11 evidence: `:pro` tier produced `exit=142` (SIGPIPE) on round=1 and never reassigned EXPLORE cards. Orchestrator role doesn't need the depth bump. |
 
 ### 2.1 OpenRouter credits (before a long run)
 

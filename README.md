@@ -204,7 +204,7 @@ Examples in chat:
 
 ### Landfolk Mode
 
-Start bot bodies (Gatherer, Flint, Mason, Barley on API ports 3001–3004):
+Start bot bodies (Gatherer, Flint, Mason, Barley on API ports from ``data/agent-models.json``; **3004** reserved for Tester):
 
 ```bash
 cd ~/hermescraft
@@ -241,7 +241,7 @@ cd ~/hermescraft
 ./scripts/run-landfolk-agent.sh Steve 3001 prompts/landfolk/steve.md "$HOME/.hermes-landfolk-steve"
 ```
 
-For Landfolk workers, use ports 3001–3004 and `prompts/landfolk/{gatherer-test,flint,mason,barley}.md` (Gatherer uses `gatherer-test.md`).
+For Landfolk workers, use ports from ``data/agent-models.json`` (Gatherer 3001 … Barley 3008; **3004** reserved for Tester) and `prompts/landfolk/{gatherer-test,flint,mason,barley}.md` (Gatherer uses `gatherer-test.md`).
 
 ## Useful `mc` commands
 

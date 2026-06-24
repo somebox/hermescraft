@@ -3,7 +3,8 @@
 Central model routing for HermesCraft. Configuration: data/agent-models.json
 
 Schema: top-level ``defaults`` { model, provider }, optional ``landfolk`` { base_api_port? },
-and ``agents`` { Name: { model?, provider?, role?, api_port? } }.
+and ``agents`` { Name: { model?, provider?, role?, api_port?, bot_env? } }.
+Per-agent ``bot_env`` (object of string env vars) is exported when landfolk starts that bot (G1 construct pilot on Mason).
 Per-agent ``api_port`` (integer) is the Mineflayer HTTP API TCP port; if omitted, port is
 ``landfolk.base_api_port`` or env ``BASE_API_PORT`` or 3001, plus the agent's zero-based index
 in ``agents`` key order.
@@ -27,6 +28,9 @@ Commands:
 
   resolve-agent-model.py api-port <AgentName> [config-path]
       Mineflayer HTTP API TCP port (optional per-agent ``api_port``; else base + index).
+
+  resolve-agent-model.py bot-env <AgentName> [config-path]
+      JSON object of env vars for the bot process (``agents.<Name>.bot_env``).
 
   resolve-agent-model.py example <key> [config-path]
       Optional examples.<key>; omitted in minimal configs.
@@ -106,6 +110,25 @@ def resolve_agent(name: str, field: str, config_path: Path) -> str:
     return (os.environ.get('HERMES_PROVIDER') or os.environ.get('PROVIDER') or '').strip()
 
 
+def resolve_bot_env(name: str, config_path: Path) -> dict[str, str]:
+    """Per-agent bot process env (e.g. HERMES_CONSTRUCT_CONTEXT=1 on Mason)."""
+    d = load_config(config_path)
+    agents = d.get('agents') or {}
+    if not isinstance(agents, dict):
+        return {}
+    agent_over = agents.get(name) or {}
+    if not isinstance(agent_over, dict):
+        return {}
+    raw = agent_over.get('bot_env') or {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key, val in raw.items():
+        if isinstance(key, str) and key.strip() and val is not None:
+            out[key.strip()] = str(val)
+    return out
+
+
 def resolve_defaults(field: str, config_path: Path) -> str:
     """Hermes-style global default row (YAML default: / provider:)."""
     if field not in ('model', 'provider'):
@@ -182,18 +205,28 @@ def resolve_api_port(name: str, config_path: Path) -> int | None:
     if not isinstance(row, dict):
         row = {}
     ap = row.get('api_port')
+    port: int | None = None
     if isinstance(ap, int) and ap > 0:
-        return ap
-    if isinstance(ap, float) and ap > 0:
-        return int(ap)
-    if isinstance(ap, str) and ap.strip().isdigit():
-        return int(ap.strip())
-    names = agent_names(config_path)
-    try:
-        idx = names.index(key)
-    except ValueError:
-        return None
-    return _base_api_port(d) + idx
+        port = ap
+    elif isinstance(ap, float) and ap > 0:
+        port = int(ap)
+    elif isinstance(ap, str) and ap.strip().isdigit():
+        port = int(ap.strip())
+    else:
+        names = agent_names(config_path)
+        try:
+            idx = names.index(key)
+        except ValueError:
+            return None
+        port = _base_api_port(d) + idx
+    from scripts.lib.port_registry import TESTER_API_PORT
+
+    if port == TESTER_API_PORT:
+        raise ValueError(
+            f'resolve-agent-model: {key!r} api_port={port} is reserved for Tester '
+            f'(data/bots/tester.yaml); pick another port in {config_path}',
+        )
+    return port
 
 
 def agent_names(config_path: Path) -> list[str]:
@@ -277,6 +310,7 @@ def usage() -> None:
         '  resolve-agent-model.py roster-lines [config-path]\n'
         '  resolve-agent-model.py agent-names [config-path]\n'
         '  resolve-agent-model.py api-port <AgentName> [config-path]\n'
+        '  resolve-agent-model.py bot-env <AgentName> [config-path]  (JSON object)\n'
         '  resolve-agent-model.py example <key> [config-path]\n',
     )
 
@@ -317,6 +351,15 @@ def main() -> None:
             )
             sys.exit(3)
         print(port, end='')
+        return
+
+    if argv[0] == 'bot-env':
+        if len(argv) < 2:
+            usage()
+            sys.exit(2)
+        path = _config_path(argv[2:3])
+        env = resolve_bot_env(argv[1], path)
+        print(json.dumps(env, sort_keys=True), end='')
         return
 
     if argv[0] == 'roster-lines':

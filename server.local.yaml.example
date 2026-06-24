@@ -15,6 +15,7 @@ world:
     use_unsafe_mvtp: true
     # Proc-nav road: include every in-game bot that must survive materialize evac
     # (e.g. [Flint, Mox, Pip]). Scout-only trials need at least Mox.
+    # Do not add Tester — reserved for pytest on HTTP :3004.
     bot_players: [Flint]
   reuse_seed: true         # mapcatalog try --reuse-world / AUTO_REUSE in scenario-agent-test.sh
 

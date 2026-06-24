@@ -69,17 +69,21 @@ def build_evac_targets(
     Observer (human operator) goes first so they leave the run world before
     the disc is wiped — avoids a full client disconnect from sitting in a
     deleted world. Pool bots follow; other online humans last. Offline bots
-    are still listed so Multiverse gets a no-op mvtp."""
+    are still listed so Multiverse gets a no-op mvtp. Test-only ``Tester``
+    is never evacuated by scenario scripts."""
+    from scripts.lib.port_registry import filter_scenario_evac_names, is_test_mc_username
+
+    bots = filter_scenario_evac_names(bots)
     order: list[str] = []
     obs = (observer or "").strip()
-    if obs and obs in online_players and not strict:
+    if obs and obs in online_players and not strict and not is_test_mc_username(obs):
         order.append(obs)
     for bot in bots:
         if bot not in order:
             order.append(bot)
     if online_players and not strict:
         for p in online_players:
-            if p not in order:
+            if p not in order and not is_test_mc_username(p):
                 order.append(p)
     return order
 

@@ -221,6 +221,14 @@ class StagedBuildersTest(unittest.TestCase):
         )
         self.assertEqual(order, ["Mox"])
 
+    def test_evac_targets_never_includes_tester(self):
+        order = rp.build_evac_targets(
+            bots=["Flint", "Tester"],
+            online_players=["Tester", "re44"],
+            observer="re44",
+        )
+        self.assertEqual(order, ["re44", "Flint"])
+
     def test_delete_unloads_first(self):
         cmds = rp.build_delete_commands("proc-lab")
         self.assertEqual(cmds, ["mv unload proc-lab", "mv delete proc-lab"])
