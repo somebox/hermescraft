@@ -1,4 +1,5 @@
 import { fail } from '../../../shared/action-contract.js';
+import { orderCells, cellId } from '../../../runtime/execution-kernel/index.js';
 
 /**
  * Sorts the discovery output into a strip-mine-friendly order.
@@ -187,7 +188,10 @@ export function collectOrderingPhase(cctx, { found, isTrunkHarvest }) {
       const cD = Math.abs(cBase.x - botPos.x) + Math.abs(cBase.z - botPos.z);
       return aD - cD;
     });
-    sorted = clusters.flat();
+    sorted = clusters.flatMap((cluster) => orderCells(
+      cluster.map((p) => ({ x: p.x, y: p.y, z: p.z, id: cellId(p.x, p.y, p.z) })),
+      { mode: 'remove', shape: 'column', botPos },
+    ));
   } else {
     const dryCands = safe.filter((p) => !isFlooded(p));
 
@@ -213,6 +217,12 @@ export function collectOrderingPhase(cctx, { found, isTrunkHarvest }) {
     perpDirection = negCount > posCount ? -1 : 1;
 
     sorted = stripSort(dryCands);
+    if (dryCands.length >= 2 && dryCands.every((p) => p.y === dryCands[0].y)) {
+      sorted = orderCells(
+        dryCands.map((p) => ({ x: p.x, y: p.y, z: p.z, id: cellId(p.x, p.y, p.z) })),
+        { mode: 'remove', shape: 'volume', botPos },
+      );
+    }
   }
 
   return {

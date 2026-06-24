@@ -13,6 +13,8 @@ import { coord3 } from '../_args.js';
 import { canSeeBlockFaces } from '../_los.js';
 import { ok, fail } from '../../shared/action-contract.js';
 import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
+import { evaluateConstructMutation } from '../../runtime/construct-context.js';
+import { attachConstructMotorEnvelope } from '../../runtime/construct-lifecycle.js';
 import { createDigFailureTracker } from '../../runtime/dig-failure-ring.js';
 import { egressTreadCells, isEgressProtectedCell, clearEgressTrail } from '../../runtime/egress-guard.js';
 import { promoteNavTrailJunction } from '../../runtime/nav-trail.js';
@@ -168,6 +170,12 @@ export function createDigHandlers(deps) {
     if (regionDig.deny && !forceEscape) {
       tracker.record('REGION_PROTECTED');
       return regionProtectedFailure('dig', target.name, x, y, z, regionDig.regionResult);
+    }
+
+    const constructDig = evaluateConstructMutation(ctx, x, y, z, 'remove');
+    if (constructDig) {
+      tracker.record(constructDig.error.code);
+      return constructDig;
     }
 
     if (
@@ -462,13 +470,13 @@ export function createDigHandlers(deps) {
       ? ` ⚠ ${breachFields.severity === 'critical' ? 'LAVA' : 'WATER'} BREACH at ${breach.breach_cell.x},${breach.breach_cell.y},${breach.breach_cell.z} — ${sealedByReaction ? 'auto-plugged; ' : ''}${breachFields.hint}${dangerNote}`
       : '';
     return ok({
-      data: {
+      data: attachConstructMotorEnvelope(ctx, {
         block_name: target.name,
         dropped_items: dropped,
         position_after: posObj(b.entity.position),
         ...(breach ? { breach } : {}),
         ...(breachReaction ? { breach_reaction: breachReaction } : {}),
-      },
+      }),
       // Preserve legacy field so existing callers (goal engine, older tests) still see it.
       result: `Mined ${target.name} at ${x}, ${y}, ${z}${tips.length ? ` Tips: ${tips.join(' | ')}` : ''}${breachSuffix}`,
       ...(tips.length ? { hints: tips } : {}),

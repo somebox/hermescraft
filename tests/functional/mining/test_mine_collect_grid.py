@@ -3,8 +3,9 @@
 Migrated from scripts/test-mine-collect-grid.py with the auto-pickup
 straggler sweep + safe-tp checks intact (Round 2 fixes preserved).
 
-Bot stands OUTSIDE the grid at (0,65,4) facing east. The pillar at
-(2,65,4) blocks LOS to the center (4,65,4) — `mc collect` must
+Bot stands OUTSIDE the grid at (1,65,4) facing east (one block closer
+than the legacy (0,65,4) standoff so post-dig drops stay in pickup range).
+The pillar at (2,65,4) blocks LOS to the center (4,65,4) — `mc collect` must
 multi-iterate, re-scanning the LOS-valid pool after each dig.
 
 Scenarios:
@@ -52,7 +53,7 @@ def _build_grid(arena, rcon, world: str, height: int) -> None:
     else:
         arena.grid_3x3(center=(4, 65, 4), height=height)
     rcon.batch([
-        f"execute in {world} run tp Tester 0 65 4 270 0",
+        f"execute in {world} run tp Tester 1 65 4 270 0",
         "give Tester minecraft:stone_pickaxe",
     ])
     arena.settle_water()
@@ -113,8 +114,12 @@ def _run_collect_scenario(
         time.sleep(0.5)
     # inventory_delta calls /action/pickup internally as fallback;
     # behaves the same whether or not we walked away.
-    post = bot.inventory_delta("cobblestone", timeout=3.0, baseline=pre, fallback_pickup=True)
+    inv_poll_s = 5.0 if want_count == 1 else 3.0
+    post = bot.inventory_delta("cobblestone", timeout=inv_poll_s, baseline=pre, fallback_pickup=True)
     gained = post - pre
+    delivered = data.get("drop_item_gained")
+    if delivered is None:
+        delivered = data.get("items_collected_in_inventory")
 
     # (1) No hang / wedge — verb exited gracefully (35s inner budget +
     # 5s slack < the 45s here < /action/collect's 120s outer timeout).
@@ -144,9 +149,13 @@ def _run_collect_scenario(
         f"causes={causes} elapsed={elapsed:.1f}s"
     )
     inv_threshold = want_count if want_count == 1 else math.ceil(want_count * 0.75)
+    if want_count == 1 and delivered is not None:
+        assert delivered >= 1, (
+            f"collect reported drop_item_gained={delivered} for strict 1/1; data={data}"
+        )
     assert gained >= inv_threshold, (
         f"inventory gained {gained}/{want_count} (threshold {inv_threshold}) — "
-        f"mined_count={mined_count}"
+        f"mined_count={mined_count} drop_item_gained={delivered}"
     )
     if want_count == 1:
         assert rcon.block_is(2, 65, 2, "air") or rcon.block_is(4, 65, 2, "air"), (

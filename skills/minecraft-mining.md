@@ -219,7 +219,7 @@ For any "I need ore X" goal, **pick the primitive that matches the situation**:
 | Ore is in your line-of-sight (visible via `mc nearby` or `mc scene`) | **`mc collect <ore_name> <count>`** | Pathfinder mines reachable blocks in one call. **Always confirm with `mc inventory`** — blocks broken can exceed items picked up when drops land off your feet. |
 | Ore is at a known coord but **behind a wall** (LOS blocked) | **`mc tunnel X Y Z <dir> <length> [width] [height]`** | Industrial corridor digger — repeated `dig_area` slices in a direction. Use the ore's coord as origin and dig **toward** it. Default width=2, height=3 = walkable corridor you can return through. |
 | You need to **descend** to ore depth from the surface | **`mc stair_down <dir> <N>`** | 3-wide walkable staircase, auto head clearance, climbable back up with `mc stair_up`. |
-| You need to **clear out a 3D volume** (room, branch mine bay) | **`mc dig_area X1 Y1 Z1 X2 Y2 Z2`** | Axis-aligned box clearance, high-Y first. **Per-call cap is 32 blocks** — split larger volumes into multiple ≤32-block boxes (the CLI error names the limit). |
+| You need to **clear out a 3D volume** (room, branch mine bay) | **`mc dig_area X1 Y1 Z1 X2 Y2 Z2`** | Axis-aligned box clearance, **layer-down row sweeps** (high Y first). **Per-call cap is 32 blocks** — split larger volumes into multiple ≤32-block boxes. On timeout, re-run the same box; skip already-air cells. |
 | Single specific block, in LOS, you really do want just one | **`mc dig X Y Z`** | Last-resort primitive. No planning. Easy to dig into a 1-wide trap. |
 
 **Anti-pattern: looping `mc dig` against blocks NOT in your line-of-sight.** That's the most common mining failure mode. Symptom: repeated `mc dig X Y Z` calls returning `[error]` in 0.3s because the block is behind a wall. If you hit that twice in a row, **switch to `mc tunnel`** with the target coord as the destination and a direction toward it. The tunnel verb takes a starting coord + direction — point it at the ore and let it carve through.
@@ -250,7 +250,7 @@ For **`[SUPPLY] oak_log` / tall-tree / mark `lt_wood_*`** cards at a **named tre
 
 1. **Preflight at base** — axe tier appropriate for the log (`wooden_axe` minimum for oak), optional dirt/cobble for bridging, food if leaving base.
 2. **Go to the trunk base** — one `mc move` / `mc goto` to the body coord or mark; don't strip-mine the surface on the way.
-3. **Fell + collect** — `mc collect oak_log N` from trunk upward, or trunk `mc dig` + `mc pickup` if collect path fails; confirm top log is air (`mc inspect` above trunk).
+3. **Fell + collect** — `mc collect oak_log N` from trunk upward, or trunk `mc dig` + `mc pickup` if collect path fails; confirm top log is air (`mc inspect` above trunk). Trunk **`mc collect`** visits the column **top-down** (canopy before base) so you don't leave floating logs.
 4. **Deposit** — `mc deposit` to the body chest/mark; chat `done <tid>: N oak_log deposited`.
 5. **Replant** — if the card or steward doctrine requires it, plant saplings at the paired `lt_grove_*` mark (see kanban-worker felling section).
 

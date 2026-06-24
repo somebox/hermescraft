@@ -54,6 +54,10 @@ const COLLECT_TUNING = {
   pickupPostSweepSleepMs: 500,
   pickupPostDropSleepMs: 300,
   pickupInitialSleepMs: 600,
+  // Match pickup-sweep magnet radius — if we dig at max reach, step in so
+  // drops spawn within auto-pickup range before the harvest loop continues.
+  magnetPickupRange: 1.5,
+  postDigApproachTimeoutMs: 3500,
 };
 
 const AIR_ABOVE = new Set(['air', 'cave_air', 'void_air']);
@@ -407,6 +411,18 @@ async function processCandidate(state, pos, equipForDigCached, instantFailState)
     state.triedKeys.add(k);
     instantFailState.consec = 0;
     await sleep(COLLECT_TUNING.postDigSleepMs);
+    const afterDig = b.entity.position;
+    const magnet = COLLECT_TUNING.magnetPickupRange;
+    if (afterDig.distanceTo(pos) > magnet + 0.35) {
+      try {
+        await gotoWithTimeout(
+          b,
+          new goals.GoalNear(pos.x, pos.y, pos.z, magnet),
+          COLLECT_TUNING.postDigApproachTimeoutMs,
+        );
+        await sleep(80);
+      } catch { /* pickup pass will retry per-drop */ }
+    }
 
     // Reactive water guard: if water flowed into the just-dug cell (a
     // hidden source we couldn't see pre-dig), mark the cell + its 4

@@ -65,6 +65,34 @@ test('level: cap stops the column loop and returns partial-completion envelope',
   assert.equal(placeCalls, 2, 'work loop must stop placing once the cap fires');
 });
 
+test('level with useExecKernel: partial envelope includes cursor and plan_hash', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 0 });
+  const floor = new Set();
+  for (let x = 0; x <= 7; x++) floor.add(`${x},63,0`);
+  const bot = {
+    entity: { position: { x: 0, y: 65, z: 0, distanceTo: () => 1 } },
+    inventory: { items: () => [{ name: 'dirt', count: 64 }] },
+    blockAt: (p) => (floor.has(`${p.x},${p.y},${p.z}`)
+      ? { name: 'stone', boundingBox: 'block', position: p }
+      : { name: 'air', boundingBox: 'empty', position: p }),
+    equip: async () => {},
+    placeBlock: async () => { t.mock.timers.tick(60); },
+  };
+  const part = createBuildingTerrainPart({
+    ctx: {},
+    config: {},
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => ({}),
+    capsMs: { level: 100 },
+    useExecKernel: true,
+  });
+  const r = await part.level({ x1: 0, z1: 0, x2: 7, z2: 0, y: 64, block: 'dirt' });
+  assert.equal(r.error.code, 'OPERATION_TIMEOUT');
+  assert.equal(typeof r.error.observed_state.cursor?.next_index, 'number');
+  assert.equal(typeof r.error.observed_state.plan_hash, 'string');
+});
+
 test('level_ground execute: inherits the partial-completion envelope from level', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: 0 });
   // Flat floor at y=63 everywhere; explicit target=64 makes every column a
@@ -194,4 +222,40 @@ test('clear_strip: cap stops batching and reports next_batch origin', async (t) 
   assert.match(r.error.message, /Partial completion: dug 18\/36/);
   assert.match(r.error.message, /Re-run the same mc clear_strip/);
   assert.equal(calls.length, 2, 'no more dig_area batches after the cap fires');
+});
+
+test('wall: cap stops runCells loop and reports partial-completion envelope', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 0 });
+  let placeCalls = 0;
+  const bot = {
+    entity: { position: { x: 0.5, y: 64, z: 0.5, distanceTo: () => 1 } },
+    inventory: { items: () => [{ name: 'cobblestone', count: 64 }] },
+    blockAt: (p) => (p.y <= 63
+      ? { name: 'stone', boundingBox: 'block', position: p }
+      : { name: 'air', boundingBox: 'empty', position: p }),
+    pathfinder: { goto: async () => {}, setGoal: () => {} },
+    equip: async () => {},
+    placeBlock: async () => { placeCalls++; t.mock.timers.tick(60); },
+  };
+  const part = createBuildingPlaceBulkPart({
+    ctx: {},
+    config: {},
+    ensureBot: () => bot,
+    sleep: async () => {},
+    capsMs: { wall: 100 },
+  });
+
+  const r = await part.wall({
+    block: 'cobblestone', x1: 0, y1: 64, z1: 0, x2: 3, y2: 66, z2: 0,
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'OPERATION_TIMEOUT');
+  assert.equal(r.error.retry_safe, true);
+  const obs = r.error.observed_state;
+  assert.equal(obs.op, 'wall');
+  assert.equal(obs.placed, 2);
+  assert.equal(typeof obs.plan_hash, 'string');
+  assert.match(r.error.message, /Partial completion/);
+  assert.match(r.error.message, /Re-run the same mc wall/);
+  assert.equal(placeCalls, 2);
 });

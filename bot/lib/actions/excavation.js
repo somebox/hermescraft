@@ -12,6 +12,21 @@ import { buildPillarCascade } from './building/pillar.js';
 import { sampleNavTrailCrumb } from '../runtime/nav-trail.js';
 import { markBriefRefreshRequired } from '../runtime/nav-brief.js';
 import { normalizeMineId } from '../runtime/mines/index.js';
+import {
+  orderCells,
+  cellId,
+  runCells,
+  isExecKernelEnabled,
+} from '../runtime/execution-kernel/index.js';
+import {
+  constructScopingEnabled,
+  evaluateConstructMutation,
+  getConstructContext,
+  getConstructAllowUnitForCtx,
+} from '../runtime/construct-context.js';
+import { attachConstructMotorEnvelope } from '../runtime/construct-lifecycle.js';
+import { checkBulkVolumeLimit } from '../runtime/construct-bulk-limits.js';
+import { worldInsideFootprint } from '../runtime/blueprints/footprint.js';
 
 const { goals } = pathfinderPkg;
 
@@ -78,6 +93,183 @@ export function createExcavationActions(services) {
       if (inv.some((it) => it.name === name)) return name;
     }
     return null;
+  }
+
+  /**
+   * Kernel-backed dig loop (HERMES_EXEC_KERNEL or args._useKernel).
+   */
+  async function digAreaWithKernel(cfg) {
+    const {
+      b, minX, maxX, minY, maxY, minZ, maxZ,
+      clearStand, safeDig, forceStructural, abortOnFail,
+      doPickup, egress, regionSkips, digHintSet, errors,
+      counters, preserveOrder, ctx, config, goals,
+    } = cfg;
+
+    const bx = Math.floor(b.entity.position.x);
+    const bz = Math.floor(b.entity.position.z);
+    const botFloorY = Math.floor(b.entity.position.y);
+    const underFeetY = botFloorY - 1;
+
+    /** @type {{ x:number, y:number, z:number, id:string }[]} */
+    const allCells = [];
+    for (let y = maxY; y >= minY; y--) {
+      for (let xi = minX; xi <= maxX; xi++) {
+        for (let zi = minZ; zi <= maxZ; zi++) {
+          allCells.push({ x: xi, y, z: zi, id: cellId(xi, y, zi) });
+        }
+      }
+    }
+    const deferIds = [];
+    if (clearStand) deferIds.push(cellId(bx, underFeetY, bz));
+
+    const ordered = orderCells(allCells, {
+      mode: 'remove',
+      shape: 'volume',
+      botPos: b.entity.position,
+      preserveOrder,
+      deferIds,
+    });
+
+    /** @type {null | { code: string, message: string, hazard: object, pos: object }} */
+    let hazardAbort = null;
+
+    const runResult = await runCells(ctx, ordered, {
+      ...getConstructAllowUnitForCtx(ctx, 'remove'),
+      async shouldSkip(unit) {
+        const pos = unit;
+        const target = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
+        if (!target || DIG_PASSABLE_NAMES.has(target.name)) return true;
+        if (target.name === 'bedrock') {
+          counters.skipped++;
+          return true;
+        }
+        const skipDig = shouldSkipDigAt(ctx, config, target.name, pos.x, pos.y, pos.z, isDigProtected, forceStructural ? { forceProtected: true } : {});
+        if (skipDig.skip) {
+          if (skipDig.regionId) regionSkips.noteSkip(skipDig.regionId);
+          counters.skipped++;
+          return true;
+        }
+        if (egress.shouldSkip(pos.x, pos.y, pos.z)) {
+          counters.skipped++;
+          return true;
+        }
+        return false;
+      },
+      async preflight(unit) {
+        if (!safeDig) return null;
+        const pos = unit;
+        const hazard = detectDigHazards(b, pos.x, pos.y, pos.z);
+        if (!hazard) return null;
+        const code =
+          hazard.kind === 'lava' ? 'HAZARD_LAVA' :
+          hazard.kind === 'fall' ? 'HAZARD_FALL' :
+          'HAZARD_SUFFOCATE';
+        const targetBlk = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
+        const hazardDetail =
+          hazard.kind === 'fall'
+            ? formatFallHazardMessage(hazard, { x: pos.x, y: pos.y, z: pos.z }, { blockName: targetBlk?.name })
+            : `${hazard.kind} hazard`;
+        hazardAbort = {
+          code,
+          message: `dig_area aborted at ${pos.x},${pos.y},${pos.z}: ${hazardDetail} ${counters.dug} blocks dug so far. Pass safe:false to override, or clear the hazard explicitly.`,
+          hazard,
+          pos,
+        };
+        return { abort: true, code, message: hazardAbort.message, retry_safe: false };
+      },
+      async beforeUnit(unit) {
+        const pos = unit;
+        if (clearStand && pos.x === bx && pos.z === bz && pos.y === underFeetY) {
+          await nudgeOffStandPillar(b, pos.x, pos.y, pos.z, goals);
+          await sleep(120);
+        }
+      },
+      async act(unit) {
+        const pos = unit;
+        const target = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
+        if (!target || DIG_PASSABLE_NAMES.has(target.name)) return { status: 'skipped' };
+        try {
+          const { hints } = await equipForDig(b, target);
+          for (const h of hints) digHintSet.add(h);
+          if (b.entity.position.distanceTo(target.position) > 4.5) {
+            try {
+              await pathfindGotoNear(b, goals, pos.x, pos.y, pos.z, 3, { opName: 'dig_area', capMs: ACTION_CAPS_MS.reach });
+            } catch { /* best-effort */ }
+          }
+          await b.dig(target, true);
+          counters.dug++;
+          return { status: 'done' };
+        } catch (err) {
+          const msg = /** @type {Error} */ (err).message || String(err);
+          errors.push(`(${pos.x},${pos.y},${pos.z}): ${msg}`);
+          counters.skipped++;
+          if (abortOnFail) throw /** @type {Error} */ (err);
+          return { status: 'failed' };
+        }
+      },
+    }, { mode: 'remove', shape: 'volume', interUnitDelayMs: 80, sleep });
+
+    if (runResult.stopReason === 'preflight_abort' && hazardAbort) {
+      return {
+        ok: false,
+        error: {
+          code: hazardAbort.code,
+          message: hazardAbort.message,
+          observed_state: {
+            hazard_at: { x: hazardAbort.pos.x, y: hazardAbort.pos.y, z: hazardAbort.pos.z },
+            hazard: hazardAbort.hazard,
+            dug_so_far: counters.dug,
+            skipped_so_far: counters.skipped,
+          },
+          retry_safe: false,
+        },
+      };
+    }
+
+    if (runResult.stopReason === 'cancelled') {
+      return {
+        ok: false,
+        error: {
+          code: 'CANCELLED',
+          message: 'dig_area cancelled',
+          observed_state: {
+            dug: counters.dug,
+            skipped: counters.skipped,
+            cursor: runResult.envelope.cursor,
+            plan_hash: runResult.envelope.resume.plan_hash,
+          },
+          retry_safe: true,
+        },
+      };
+    }
+
+    let pickupResult = '';
+    if (doPickup) {
+      try {
+        const pu = await getActions().pickup();
+        pickupResult = pu?.result ? ` ${pu.result}` : '';
+      } catch {
+        pickupResult = ' (pickup skipped)';
+      }
+    }
+
+    egress.finalize();
+    const digHints = [...digHintSet];
+    const tipsSuffix = digHints.length ? ` Tips: ${digHints.join(' | ')}` : '';
+    return attachConstructMotorEnvelope(ctx, {
+      result: `Dug ${counters.dug} blocks (${counters.skipped} skipped).${pickupResult}${regionSkips.suffix()}${egress.suffix()}${tipsSuffix}${errors.length ? ` Errors: ${errors.slice(0, 3).join('; ')}` : ''}`,
+      dug: counters.dug,
+      skipped: counters.skipped,
+      ...regionSkips.dataFields(),
+      ...egress.dataFields(),
+      ...(digHints.length ? { hints: digHints } : {}),
+      ...(errors.length ? { errors: errors.slice(0, 20) } : {}),
+      ...(runResult.envelope?.counters?.scope_denied
+        ? { scope_denied_construct: runResult.envelope.counters.scope_denied }
+        : {}),
+      ...(runResult.envelope?.resume?.plan_hash ? { plan_hash: runResult.envelope.resume.plan_hash } : {}),
+    });
   }
 
   const cardinalDeltaOrFail = (direction) => {
@@ -260,22 +452,65 @@ export function createExcavationActions(services) {
     const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
     const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
     const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-    // Cap lowered from 500 → 32 on 2026-05-27.
-    if (total > 32) {
-      return fail('AREA_TOO_LARGE', `mc dig_area: ${total} blocks is too many — the per-call limit is 32. Run ${Math.ceil(total / 32)} smaller calls instead, each with ≤32 blocks.`, {
-        observed_state: { requested_volume: total, max_volume: 32, x1, y1, z1, x2, y2, z2 },
-        next_action_hint: `Pick a sub-box with ≤32 blocks (e.g. a ${Math.min(maxX - minX + 1, 4)}×${Math.min(maxY - minY + 1, 4)}×${Math.min(maxZ - minZ + 1, 2)} slice) and repeat for the rest.`,
-        retry_safe: false,
-      });
+    const inConstruct = constructScopingEnabled() && !!getConstructContext(ctx);
+
+    let constructMutable = total;
+    if (inConstruct) {
+      const session = getConstructContext(ctx);
+      constructMutable = 0;
+      for (let y = minY; y <= maxY; y++) {
+        for (let xi = minX; xi <= maxX; xi++) {
+          for (let zi = minZ; zi <= maxZ; zi++) {
+            if (!worldInsideFootprint(xi, y, zi, session.anchor, session.footprint)) continue;
+            const deny = evaluateConstructMutation(ctx, xi, y, zi, 'remove');
+            if (!deny) constructMutable += 1;
+          }
+        }
+      }
+      if (constructMutable === 0) {
+        return fail(
+          'CONSTRUCT_SCOPE_EMPTY',
+          'mc dig_area: no cells in workset after construct clip',
+          {
+            observed_state: { requested_volume: total, scope_denied: total },
+            next_action_hint: 'mc construct show — shrink the box or fix mismatch categories',
+            retry_safe: false,
+          },
+        );
+      }
     }
+
+    const volumeFail = checkBulkVolumeLimit({
+      opName: 'dig_area',
+      total,
+      mutableCount: constructMutable,
+      inConstruct,
+      box: { x1, y1, z1, x2, y2, z2 },
+    });
+    if (volumeFail) return volumeFail;
 
     let dug = 0;
     let skipped = 0;
+    let scope_denied_construct = 0;
     /** @type {string[]} */
     const errors = [];
     /** @type {Set<string>} */
     const digHintSet = new Set();
     const regionSkips = createRegionSkipTracker();
+
+    const useKernel = args._useKernel === true || args._useKernel === 'true' || isExecKernelEnabled()
+      || (constructScopingEnabled() && !!getConstructContext(ctx));
+    const preserveOrder = args.preserveOrder === true || args.preserveOrder === 'true';
+
+    if (useKernel) {
+      const counters = { dug: 0, skipped: 0 };
+      return digAreaWithKernel({
+        b, minX, maxX, minY, maxY, minZ, maxZ,
+        clearStand, safeDig, forceStructural, abortOnFail,
+        doPickup, egress, regionSkips, digHintSet, errors,
+        counters, preserveOrder, ctx, config, goals,
+      });
+    }
 
     for (let y = maxY; y >= minY; y--) {
       const bx = Math.floor(b.entity.position.x);
@@ -312,6 +547,21 @@ export function createExcavationActions(services) {
       const order = [...normal, ...deferred];
 
       for (const pos of order) {
+        if (constructScopingEnabled() && getConstructContext(ctx)) {
+          const session = getConstructContext(ctx);
+          if (!worldInsideFootprint(pos.x, pos.y, pos.z, session.anchor, session.footprint)) {
+            skipped++;
+            scope_denied_construct++;
+            continue;
+          }
+          const deny = evaluateConstructMutation(ctx, pos.x, pos.y, pos.z, 'remove');
+          if (deny) {
+            skipped++;
+            scope_denied_construct++;
+            continue;
+          }
+        }
+
         if (clearStand && pos.x === bx && pos.z === bz && pos.y === underFeetY) {
           await nudgeOffStandPillar(b, pos.x, pos.y, pos.z, goals);
           await sleep(120);
@@ -397,7 +647,7 @@ export function createExcavationActions(services) {
 
     const digHints = [...digHintSet];
     const tipsSuffix = digHints.length ? ` Tips: ${digHints.join(' | ')}` : '';
-    return {
+    return attachConstructMotorEnvelope(ctx, {
       result: `Dug ${dug} blocks (${skipped} skipped).${pickupResult}${regionSkips.suffix()}${egress.suffix()}${tipsSuffix}${errors.length ? ` Errors: ${errors.slice(0, 3).join('; ')}` : ''}`,
       dug,
       skipped,
@@ -405,7 +655,8 @@ export function createExcavationActions(services) {
       ...egress.dataFields(),
       ...(digHints.length ? { hints: digHints } : {}),
       ...(errors.length ? { errors: errors.slice(0, 20) } : {}),
-    };
+      ...(scope_denied_construct ? { scope_denied_construct } : {}),
+    });
   },
 
   /**

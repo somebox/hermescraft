@@ -7,6 +7,16 @@ import { fail, ok } from '../../shared/action-contract.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
 import { box6, itemName, bool } from '../_args.js';
 import { withYBoth, parseYInput, normalizeBoxYArgs } from '../../runtime/coordinates.js';
+import { orderCells, runCells, cellId } from '../../runtime/execution-kernel/index.js';
+import {
+  constructScopingEnabled,
+  evaluateConstructMutation,
+  getConstructContext,
+  getConstructAllowUnitForCtx,
+} from '../../runtime/construct-context.js';
+import { attachConstructMotorEnvelope } from '../../runtime/construct-lifecycle.js';
+import { checkBulkVolumeLimit } from '../../runtime/construct-bulk-limits.js';
+import { worldInsideFootprint } from '../../runtime/blueprints/footprint.js';
 
 const { goals } = pathfinderPkg;
 
@@ -36,20 +46,8 @@ export function createBuildingPlaceBulkPart(deps) {
       const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
       const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
       const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-      // Cap lowered from 500 → 32 cells (2026-05-27).
-      if (total > 32) {
-        return fail(
-          'AREA_TOO_LARGE',
-          `mc fill: ${total} blocks is too many — the per-call limit is 32. Run ${Math.ceil(total / 32)} smaller calls instead, each with ≤32 blocks (e.g. a ${Math.min(maxX - minX + 1, 4)}×${Math.min(maxY - minY + 1, 4)}×${Math.min(maxZ - minZ + 1, 2)} slice).`,
-          {
-            observed_state: { requested_volume: total, max_volume: 32, x1, y1, z1, x2, y2, z2 },
-            next_action_hint: `Pick a sub-box with ≤32 blocks and repeat for the rest.`,
-            retry_safe: false,
-          },
-        );
-      }
 
-      const positions = [];
+      let positions = [];
       for (let y = minY; y <= maxY; y++) {
         for (let x = minX; x <= maxX; x++) {
           for (let z = minZ; z <= maxZ; z++) {
@@ -61,6 +59,46 @@ export function createBuildingPlaceBulkPart(deps) {
           }
         }
       }
+
+      let scope_denied_construct = 0;
+      if (constructScopingEnabled() && getConstructContext(ctx)) {
+        const session = getConstructContext(ctx);
+        const kept = [];
+        for (const pos of positions) {
+          if (!worldInsideFootprint(pos.x, pos.y, pos.z, session.anchor, session.footprint)) {
+            scope_denied_construct += 1;
+            continue;
+          }
+          const deny = evaluateConstructMutation(ctx, pos.x, pos.y, pos.z, 'add', { blockName });
+          if (deny) {
+            scope_denied_construct += 1;
+            continue;
+          }
+          kept.push(pos);
+        }
+        positions = kept;
+        if (positions.length === 0) {
+          return fail(
+            'CONSTRUCT_SCOPE_EMPTY',
+            `mc fill ${blockName}: no cells in workset after construct clip (${scope_denied_construct} denied)`,
+            {
+              observed_state: { scope_denied: scope_denied_construct, block: blockName },
+              next_action_hint: 'mc construct show — shrink the box or fix mismatch categories',
+              retry_safe: false,
+            },
+          );
+        }
+      }
+
+      const inConstruct = constructScopingEnabled() && !!getConstructContext(ctx);
+      const volumeFail = checkBulkVolumeLimit({
+        opName: 'fill',
+        total,
+        mutableCount: positions.length,
+        inConstruct,
+        box: { x1, y1, z1, x2, y2, z2 },
+      });
+      if (volumeFail) return volumeFail;
 
       const capMs = Number(capsMs.place_fill) || ACTION_CAPS_MS.place_fill;
       const deadline = Date.now() + capMs;
@@ -143,6 +181,123 @@ export function createBuildingPlaceBulkPart(deps) {
             overwriteSkipped.push({ x: c.x, y: c.y, z: c.z, reason: e?.message || String(e) });
           }
         }
+      }
+
+      const useConstructKernel = constructScopingEnabled() && getConstructContext(ctx);
+      if (useConstructKernel) {
+        const offsetsConstruct = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+        const regionSkipsK = createRegionSkipTracker();
+        let skipped_already_k = 0;
+        let failed_k = 0;
+        const progressK = { placed: 0 };
+        /** @type {null | { code: string, message: string }} */
+        let stockOutK = null;
+        const orderedK = orderCells(
+          positions.map((p) => ({ ...p, id: cellId(p.x, p.y, p.z) })),
+          { mode: 'add', shape: 'volume', botPos: b.entity.position },
+        );
+        const partialTimeoutK = (runEnvelope) => timeoutError('place_fill', capMs, {
+          block: blockName,
+          placed: runEnvelope?.counters?.placed ?? progressK.placed,
+          skipped_already: skipped_already_k,
+          failed: failed_k,
+          total: positions.length,
+          cells_done: runEnvelope?.cursor?.units_done ?? 0,
+          remaining_count: positions.length - (runEnvelope?.cursor?.units_done ?? 0),
+          next_unfilled: (runEnvelope?.resume?.next_units || []).slice(0, 8).map((u) => [u.x, u.y, u.z]),
+          bounds: { x1: minX, x2: maxX, z1: minZ, z2: maxZ, y1: minY, y2: maxY },
+          cursor: runEnvelope?.cursor,
+          plan_hash: runEnvelope?.resume?.plan_hash,
+        }, `Partial completion: ${runEnvelope?.cursor?.units_done ?? 0}/${positions.length} cells processed (${progressK.placed} placed). Re-run the same mc fill command — already-placed cells are skipped.`);
+
+        const runResultK = await runCells(ctx, orderedK, {
+          ...getConstructAllowUnitForCtx(ctx, 'add'),
+          async shouldSkip(unit) {
+            const skipPl = shouldSkipPlaceAt(ctx, config, blockName, unit.x, unit.y, unit.z);
+            if (skipPl.skip) {
+              regionSkipsK.noteSkip(skipPl.regionId);
+              return true;
+            }
+            const existing = b.blockAt(new Vec3(unit.x, unit.y, unit.z));
+            if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
+              if (existing.name === blockName) skipped_already_k++;
+              else failed_k++;
+              return true;
+            }
+            return false;
+          },
+          async beforeUnit(unit) {
+            if (b.entity.position.distanceTo(new Vec3(unit.x, unit.y, unit.z)) > 4.5) {
+              try {
+                await pathfindGotoNear(b, goals, unit.x, unit.y, unit.z, 3, { opName: 'place_fill', capMs: ACTION_CAPS_MS.reach });
+              } catch { /* best-effort */ }
+            }
+          },
+          async act(unit) {
+            const item = b.inventory.items().find((i) => i.name === blockName);
+            if (!item) {
+              stockOutK = {
+                code: 'MISSING_INVENTORY',
+                message: `Out of ${blockName} after placing ${progressK.placed}/${positions.length}`,
+              };
+              return { status: 'failed', code: 'OUT_OF_STOCK' };
+            }
+            try { await b.equip(item, 'hand'); } catch { /* continue */ }
+            for (const [dx, dy, dz] of offsetsConstruct) {
+              const ref = b.blockAt(new Vec3(unit.x + dx, unit.y + dy, unit.z + dz));
+              if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
+                try {
+                  await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+                  recordRecentPlace(ctx, unit, blockName);
+                  markBriefRefreshRequired(ctx, { cells: [{ x: unit.x, y: unit.y, z: unit.z }] });
+                  progressK.placed++;
+                  return { status: 'done' };
+                } catch {
+                  return { status: 'failed' };
+                }
+              }
+            }
+            failed_k++;
+            return { status: 'failed' };
+          },
+        }, {
+          mode: 'add',
+          shape: 'volume',
+          deadlineMs: deadline,
+          sleep,
+        });
+
+        if (stockOutK) {
+          return fail(stockOutK.code, stockOutK.message, {
+            observed_state: { block: blockName, placed: progressK.placed, total: positions.length },
+            retry_safe: false,
+          });
+        }
+        if (runResultK.stopReason === 'deadline') {
+          return partialTimeoutK(runResultK.envelope);
+        }
+        const scopeDeniedK = runResultK.envelope?.counters?.scope_denied || 0;
+        const scopeTotal = scope_denied_construct + scopeDeniedK;
+        const boundsK = {
+          x1: minX, x2: maxX, z1: minZ, z2: maxZ,
+          block_y1: minY, block_y2: maxY,
+          surface_y1: minY + 1, surface_y2: maxY + 1,
+          y1: minY, y2: maxY,
+        };
+        return ok({
+          result: `Placed ${progressK.placed}/${positions.length} ${blockName} (construct kernel)`,
+          data: attachConstructMotorEnvelope(ctx, {
+            placed: progressK.placed,
+            skipped_already: skipped_already_k,
+            total: positions.length,
+            bounds: boundsK,
+            partial: false,
+            ...(scopeTotal ? { scope_denied_construct: scopeTotal } : {}),
+            ...(runResultK.envelope?.cursor ? { cursor: runResultK.envelope.cursor } : {}),
+            ...(runResultK.envelope?.resume?.plan_hash ? { plan_hash: runResultK.envelope.resume.plan_hash } : {}),
+            ...regionSkipsK.dataFields(),
+          }),
+        });
       }
 
       // F60+F62: cluster cells by reach-from-a-safe-standpoint. The bot
@@ -275,7 +430,11 @@ export function createBuildingPlaceBulkPart(deps) {
             } catch {}
           }
         }
-        for (const pos of cluster.cells) {
+        for (const pos of orderCells(cluster.cells, {
+          mode: 'add',
+          shape: 'volume',
+          botPos: b.entity.position,
+        })) {
           if (Date.now() > deadline) return partialTimeout();
           processedKeys.add(cellKey(pos));
           const skipPl = shouldSkipPlaceAt(ctx, config, blockName, pos.x, pos.y, pos.z);
@@ -393,6 +552,7 @@ export function createBuildingPlaceBulkPart(deps) {
         total: positions.length,
         bounds,
         ...regionSkips.dataFields(),
+        ...(scope_denied_construct ? { scope_denied_construct } : {}),
         ...(autoDisplaced ? { auto_displaced: autoDisplaced } : {}),
         ...(dugForOverwrite.length || overwriteSkipped.length ? {
           overwrite_summary: {
@@ -407,7 +567,7 @@ export function createBuildingPlaceBulkPart(deps) {
       if (skipped_total === 0) {
         return ok({
           result: resultMsg,
-          data: { ...sharedData, partial: false },
+          data: attachConstructMotorEnvelope(ctx, { ...sharedData, partial: false }),
         });
       }
 
@@ -422,7 +582,7 @@ export function createBuildingPlaceBulkPart(deps) {
           : `Re-run mc fill ${blockName} ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} for remaining cells (no inspect grid needed)`;
 
       return fail('FILL_PARTIAL', resultMsg, {
-        observed_state: {
+        observed_state: attachConstructMotorEnvelope(ctx, {
           ...sharedData,
           partial: true,
           remaining_count: skipped_total,
@@ -431,7 +591,7 @@ export function createBuildingPlaceBulkPart(deps) {
             bot_was_inside_region: true,
             bot_blocked_cells: botBlockedCells,
           } : {}),
-        },
+        }),
         next_action_hint: fillHint,
         retry_safe: true,
       });
@@ -445,6 +605,16 @@ export function createBuildingPlaceBulkPart(deps) {
      * — Phase-2 action contract (see docs/reference/bot/handler-response-contracts.md mc wall) —
      */
     async wall(args) {
+      if (constructScopingEnabled() && getConstructContext(ctx)) {
+        return fail(
+          'BLUEPRINT_WALL_DISABLED',
+          'mc wall is disabled during construct context — use mc fill on plan cells instead',
+          {
+            retry_safe: false,
+            next_action_hint: 'mc construct show; place walls cell-by-cell or with mc fill slices',
+          },
+        );
+      }
       const normalized = normalizeBoxYArgs(args);
       const { block: blockName, x1, y1, z1, x2, y2, z2 } = normalized;
       const b = ensureBot();
@@ -521,55 +691,124 @@ export function createBuildingPlaceBulkPart(deps) {
       }
 
       const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
-      let placed = 0;
       let skipped_existing = 0;
       let failed = 0;
       const regionSkips = createRegionSkipTracker();
+      const capMs = Number(capsMs.wall) || ACTION_CAPS_MS.wall || ACTION_CAPS_MS.place_fill;
+      const deadline = Date.now() + capMs;
 
-      for (const pos of positions) {
-        const skipPl = shouldSkipPlaceAt(ctx, config, blockName, pos.x, pos.y, pos.z);
-        if (skipPl.skip) {
-          regionSkips.noteSkip(skipPl.regionId);
-          continue;
-        }
-        const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
-        if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
-          skipped_existing++;
-          continue;
-        }
+      const ordered = orderCells(
+        positions.map((p) => ({ ...p, id: cellId(p.x, p.y, p.z) })),
+        { mode: 'add', shape: 'volume', botPos: b.entity.position },
+      );
 
-        const item = b.inventory.items().find((i) => i.name === blockName);
-        if (!item) {
-          return {
-            ok: false,
-            error: {
-              code: 'MISSING_INVENTORY',
-              message: `Out of ${blockName} after placing ${placed}/${positions.length}`,
-              observed_state: { blocks_placed: placed, blocks_remaining: positions.length - placed - skipped_existing, block: blockName },
-              retry_safe: true,
-            },
-          };
-        }
-        try { await b.equip(item, 'hand'); } catch {}
+      const partialTimeout = (runEnvelope) => timeoutError('wall', capMs, {
+        block: blockName,
+        placed: runEnvelope?.counters?.placed ?? 0,
+        skipped_existing,
+        failed,
+        total: positions.length,
+        cells_done: runEnvelope?.cursor?.units_done ?? 0,
+        remaining_count: positions.length - (runEnvelope?.cursor?.units_done ?? 0),
+        next_unfilled: (runEnvelope?.resume?.next_units || []).slice(0, 8).map((u) => [u.x, u.y, u.z]),
+        bounds: {
+          x1: minX, x2: maxX, z1: minZ, z2: maxZ, y1: minY, y2: maxY,
+        },
+        cursor: runEnvelope?.cursor,
+        plan_hash: runEnvelope?.resume?.plan_hash,
+      }, `Partial completion: ${runEnvelope?.cursor?.units_done ?? 0}/${positions.length} cells processed (${runEnvelope?.counters?.placed ?? 0} placed). Re-run the same mc wall command — already-placed cells are skipped.`);
 
-        if (b.entity.position.distanceTo(new Vec3(pos.x, pos.y, pos.z)) > 4.5) {
-          try { await pathfindGotoNear(b, goals, pos.x, pos.y, pos.z, 3, { opName: 'place_fill', capMs: ACTION_CAPS_MS.reach }); } catch {}
-        }
+      /** @type {null | { code: string, message: string }} */
+      let stockOut = null;
+      const progress = { placed: 0 };
 
-        let success = false;
-        for (const [dx, dy, dz] of offsets) {
-          const ref = b.blockAt(new Vec3(pos.x + dx, pos.y + dy, pos.z + dz));
-          if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
-            try {
-              await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
-              recordRecentPlace(ctx, pos, blockName);
-              placed++;
-              success = true;
-            } catch {}
-            break;
+      const runResult = await runCells(ctx, ordered, {
+        async shouldSkip(unit) {
+          const skipPl = shouldSkipPlaceAt(ctx, config, blockName, unit.x, unit.y, unit.z);
+          if (skipPl.skip) {
+            regionSkips.noteSkip(skipPl.regionId);
+            return true;
           }
-        }
-        if (!success) failed++;
+          const existing = b.blockAt(new Vec3(unit.x, unit.y, unit.z));
+          if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
+            skipped_existing++;
+            return true;
+          }
+          return false;
+        },
+        async beforeUnit(unit) {
+          if (b.entity.position.distanceTo(new Vec3(unit.x, unit.y, unit.z)) > 4.5) {
+            try {
+              await pathfindGotoNear(b, goals, unit.x, unit.y, unit.z, 3, { opName: 'place_fill', capMs: ACTION_CAPS_MS.reach });
+            } catch { /* best-effort */ }
+          }
+        },
+        async act(unit) {
+          const item = b.inventory.items().find((i) => i.name === blockName);
+          if (!item) {
+            stockOut = {
+              code: 'MISSING_INVENTORY',
+              message: `Out of ${blockName} after placing ${progress.placed}/${positions.length}`,
+            };
+            return { status: 'failed', code: 'OUT_OF_STOCK' };
+          }
+          try { await b.equip(item, 'hand'); } catch { /* continue */ }
+
+          for (const [dx, dy, dz] of offsets) {
+            const ref = b.blockAt(new Vec3(unit.x + dx, unit.y + dy, unit.z + dz));
+            if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
+              try {
+                await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+                recordRecentPlace(ctx, unit, blockName);
+                progress.placed++;
+                return { status: 'done' };
+              } catch { /* try next face */ }
+            }
+          }
+          return { status: 'failed' };
+        },
+      }, {
+        deadlineMs: deadline,
+        mode: 'add',
+        shape: 'volume',
+        interUnitDelayMs: 0,
+        sleep,
+      });
+
+      const placed = runResult.envelope.counters.placed || 0;
+      failed = runResult.envelope.counters.failed || 0;
+
+      if (stockOut) {
+        return {
+          ok: false,
+          error: {
+            code: stockOut.code,
+            message: stockOut.message,
+            observed_state: { blocks_placed: placed, blocks_remaining: positions.length - placed - skipped_existing, block: blockName },
+            retry_safe: true,
+          },
+        };
+      }
+
+      if (runResult.stopReason === 'deadline') {
+        return partialTimeout(runResult.envelope);
+      }
+
+      if (runResult.stopReason === 'cancelled') {
+        return {
+          ok: false,
+          error: {
+            code: 'CANCELLED',
+            message: 'wall cancelled',
+            observed_state: {
+              blocks_placed: placed,
+              skipped_existing,
+              cursor: runResult.envelope.cursor,
+              plan_hash: runResult.envelope.resume?.plan_hash,
+            },
+            retry_safe: true,
+          },
+        };
       }
 
       return {
@@ -588,6 +827,7 @@ export function createBuildingPlaceBulkPart(deps) {
           },
           block: blockName,
           ...regionSkips.dataFields(),
+          ...(runResult.envelope.resume?.plan_hash ? { plan_hash: runResult.envelope.resume.plan_hash } : {}),
         },
         result: `Wall: ${placed}/${positions.length} ${blockName} placed${skipped_existing ? ` (${skipped_existing} skipped — existing block)` : ''}${failed ? ` (${failed} failed)` : ''}${regionSkips.suffix()}`,
       };

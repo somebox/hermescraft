@@ -4,7 +4,21 @@ import { equipForDig, isDigProtected, recordRecentPlace, columnTopSolid } from '
 import { shouldSkipDigAt, shouldSkipPlaceAt } from '../../runtime/regions/policy-guard.js';
 import { cardinalDelta } from '../_directions.js';
 import { pathfindGotoNear, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
+import { fail } from '../../shared/action-contract.js';
 import { parseYInput, withYBoth } from '../../runtime/coordinates.js';
+import {
+  constructScopingEnabled,
+  getConstructContext,
+} from '../../runtime/construct-context.js';
+import {
+  orderColumnsBoustrophedon,
+  orderCells,
+  cellId,
+  runCells,
+  isExecKernelEnabled,
+  envelopeToObservedState,
+  computePlanHash,
+} from '../../runtime/execution-kernel/index.js';
 import { cascadeFor, paletteForRegion, tierOf, isStructural } from '../../runtime/materials.js';
 import { getWalkabilitySpec } from '../../shared/walkability-spec.js';
 
@@ -222,6 +236,16 @@ export function createBuildingTerrainPart(deps) {
      * tier_1 `fill_default` cascade. See data/materials.json.
      */
     async level({ x1, z1, x2, z2, y, surface_y, block: fillBlockName, up }) {
+      if (constructScopingEnabled() && getConstructContext(ctx)) {
+        return fail(
+          'CONSTRUCT_LEVEL_DISABLED',
+          'mc level is disabled during construct context — use scoped mc fill / dig_area slices on plan cells',
+          {
+            retry_safe: false,
+            next_action_hint: 'mc construct show; level one column at a time with mc dig / mc place or small fill boxes',
+          },
+        );
+      }
       const b = ensureBot();
       for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
         if (!Number.isFinite(Number(v))) {
@@ -295,11 +319,15 @@ export function createBuildingTerrainPart(deps) {
 
       const capMs = Number(capsMs.level) || ACTION_CAPS_MS.level;
       const deadline = Date.now() + capMs;
-      const cols = [];
+      const colsRaw = [];
       for (let cx = minX; cx <= maxX; cx++) {
-        for (let cz = minZ; cz <= maxZ; cz++) cols.push({ x: cx, z: cz });
+        for (let cz = minZ; cz <= maxZ; cz++) colsRaw.push({ x: cx, z: cz });
       }
-      const partialTimeout = (colIdx) => timeoutError('level', capMs, {
+      const useKernel = isExecKernelEnabled() || deps.useExecKernel === true;
+      const cols = useKernel
+        ? orderColumnsBoustrophedon(colsRaw, b.entity.position)
+        : colsRaw;
+      const partialTimeout = (colIdx, kernelExtra = {}) => timeoutError('level', capMs, {
         dug,
         placed,
         skipped,
@@ -308,36 +336,112 @@ export function createBuildingTerrainPart(deps) {
         columns_remaining: cols.length - colIdx,
         next_unfilled: cols.slice(colIdx, colIdx + 8).map((c) => [c.x, c.z]),
         bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY }, targetY),
+        ...(useKernel ? {
+          cursor: kernelExtra.cursor || { next_index: colIdx, units_done: colIdx, units_total: cols.length },
+          plan_hash: kernelExtra.plan_hash || computePlanHash('remove', 'column', cols.map((c) => `${c.x},${c.z}`)),
+        } : {}),
+        ...kernelExtra,
       }, `Partial completion: ${colIdx}/${cols.length} columns done. Re-run the same mc level command — already-leveled columns are skipped quickly.`);
 
       for (let ci = 0; ci < cols.length; ci++) {
         const { x, z } = cols[ci];
-        if (Date.now() > deadline) return partialTimeout(ci);
+        if (Date.now() > deadline) {
+          return partialTimeout(ci);
+        }
         {
           // 1) Dig blocks above targetY (top-down so debris doesn't fall on us).
+          const digUnits = [];
           for (let dy = upRange; dy >= 1; dy--) {
-            if (Date.now() > deadline) return partialTimeout(ci);
-            const py = targetY + dy;
-            const blk = b.blockAt(new Vec3(x, py, z));
-            if (!blk || isAirLike(blk)) continue;
-            if (shouldSkipDigAt(ctx, config, blk.name, x, py, z, isDigProtected).skip) { skipped++; continue; }
-            if (b.entity.position.distanceTo(blk.position) > 4.5) {
-              try { await pathfindGotoNear(b, goals, x, py, z, 3, { opName: 'build_wall', capMs: ACTION_CAPS_MS.reach }); } catch {}
+            digUnits.push({ x, y: targetY + dy, z, id: cellId(x, targetY + dy, z) });
+          }
+          if (useKernel && digUnits.length > 0) {
+            const digOrdered = orderCells(digUnits, {
+              mode: 'remove',
+              shape: 'column',
+              botPos: b.entity.position,
+            });
+            const digRun = await runCells(ctx, digOrdered, {
+              async shouldSkip(unit) {
+                const blk = b.blockAt(new Vec3(unit.x, unit.y, unit.z));
+                if (!blk || isAirLike(blk)) return true;
+                if (shouldSkipDigAt(ctx, config, blk.name, unit.x, unit.y, unit.z, isDigProtected).skip) {
+                  skipped++;
+                  return true;
+                }
+                return false;
+              },
+              async beforeUnit(unit) {
+                if (b.entity.position.distanceTo(new Vec3(unit.x, unit.y, unit.z)) > 4.5) {
+                  try {
+                    await pathfindGotoNear(b, goals, unit.x, unit.y, unit.z, 3, { opName: 'build_wall', capMs: ACTION_CAPS_MS.reach });
+                  } catch {}
+                }
+              },
+              async act(unit) {
+                const blk = b.blockAt(new Vec3(unit.x, unit.y, unit.z));
+                if (!blk || isAirLike(blk)) return { status: 'skipped' };
+                try {
+                  await equipForDig(b, blk);
+                  await b.dig(blk);
+                  dug++;
+                  return { status: 'done' };
+                } catch (e) {
+                  failed++;
+                  errors.push(`dig ${unit.x},${unit.y},${unit.z}: ${e?.message || e}`);
+                  return { status: 'failed' };
+                }
+              },
+            }, {
+              deadlineMs: deadline,
+              failFastOnTool: true,
+              mode: 'remove',
+              shape: 'column',
+              interUnitDelayMs: 0,
+              sleep,
+            });
+            if (digRun.stopReason === 'deadline') {
+              return partialTimeout(ci, envelopeToObservedState(digRun.envelope));
             }
-            try {
-              await equipForDig(b, blk);
-              await b.dig(blk);
-              dug++;
-            } catch (e) {
-              failed++;
-              errors.push(`dig ${x},${py},${z}: ${e?.message || e}`);
+            if (digRun.stopReason === 'tool_missing') {
+              return {
+                ok: false,
+                error: {
+                  code: 'TOOL_MISSING',
+                  message: digRun.envelope.error?.message || 'missing tool',
+                  observed_state: envelopeToObservedState(digRun.envelope, {
+                    dug, placed, columns_done: ci, columns_remaining: cols.length - ci,
+                  }),
+                  retry_safe: true,
+                },
+              };
+            }
+          } else {
+            for (let dy = upRange; dy >= 1; dy--) {
+              if (Date.now() > deadline) return partialTimeout(ci);
+              const py = targetY + dy;
+              const blk = b.blockAt(new Vec3(x, py, z));
+              if (!blk || isAirLike(blk)) continue;
+              if (shouldSkipDigAt(ctx, config, blk.name, x, py, z, isDigProtected).skip) { skipped++; continue; }
+              if (b.entity.position.distanceTo(blk.position) > 4.5) {
+                try { await pathfindGotoNear(b, goals, x, py, z, 3, { opName: 'build_wall', capMs: ACTION_CAPS_MS.reach }); } catch {}
+              }
+              try {
+                await equipForDig(b, blk);
+                await b.dig(blk);
+                dug++;
+              } catch (e) {
+                failed++;
+                errors.push(`dig ${x},${py},${z}: ${e?.message || e}`);
+              }
             }
           }
 
           // 2) Fill air at targetY with a leveling block.
           const target = b.blockAt(new Vec3(x, targetY, z));
-          if (target && !isAirLike(target)) { skipped++; continue; }
-
+          const needsFill = !target || isAirLike(target);
+          if (!needsFill) {
+            skipped++;
+          } else {
           let didPlace = false;
           for (const blockName of fillCascade) {
             const item = b.inventory.items().find((it) => it.name === blockName);
@@ -449,6 +553,7 @@ export function createBuildingTerrainPart(deps) {
             }
             failed++;
             errors.push(`fill ${x},${targetY},${z}: no solid neighbor`);
+          }
           }
         }
       }

@@ -5,6 +5,12 @@ import { recordRecentPlace, equipForDig } from '../../runtime/dig-tools.js';
 import { withYBoth, surfaceFromBlock, parseYInput } from '../../runtime/coordinates.js';
 import { shouldSkipPlaceAt } from '../../runtime/regions/policy-guard.js';
 import { pathfindGotoNear, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
+import { fail } from '../../shared/action-contract.js';
+import {
+  constructScopingEnabled,
+  getConstructContext,
+} from '../../runtime/construct-context.js';
+import { isExecKernelEnabled, orderCells, cellId, runCells } from '../../runtime/execution-kernel/index.js';
 
 const { goals } = pathfinderPkg;
 
@@ -186,6 +192,16 @@ export function createBuildingRoadPart(deps) {
       dry_run,
       max_cells,
     }) {
+      if (constructScopingEnabled() && getConstructContext(ctx)) {
+        return fail(
+          'CONSTRUCT_CLEAR_STRIP_DISABLED',
+          'mc clear_strip is disabled during construct context — use scoped mc dig_area on plan cells',
+          {
+            retry_safe: false,
+            next_action_hint: 'mc construct show; clear interior/extra cells with mc dig_area slices',
+          },
+        );
+      }
       const b = ensureBot();
       for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
         if (!Number.isFinite(Number(v))) {
@@ -416,6 +432,8 @@ export function createBuildingRoadPart(deps) {
               clear_stand: false,
               safe: true,
               force_structural: isRoad,
+              _useKernel: isExecKernelEnabled(),
+              preserveOrder: true,
             });
             batches++;
             if (res && res.ok === false) {
@@ -1108,28 +1126,66 @@ export function createBuildingRoadPart(deps) {
           // Don't silently skip — record it so the caller learns the tree is boxed in.
           unreachableClusters++;
         }
-        for (const cell of cluster) {
-          const live = b.blockAt(new Vec3(cell.x, cell.y, cell.z));
-          if (!live || (live.name !== cell.name && !isLogBlock(live.name) && !isLeafBlock(live.name))) {
-            continue;
-          }
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            await equipForDig(b, live);
+        const clusterUnits = cluster.map((cell) => ({
+          x: cell.x,
+          y: cell.y,
+          z: cell.z,
+          id: cellId(cell.x, cell.y, cell.z),
+          meta: { expected: cell.name },
+        }));
+        clusterUnits.sort((a, c) => c.y - a.y || a.x - c.x || a.z - c.z);
+        const orderedCluster = orderCells(clusterUnits, {
+          mode: 'remove',
+          shape: 'column',
+          botPos: b.entity.position,
+          preserveOrder: true,
+        });
+        const clusterRun = await runCells(ctx, orderedCluster, {
+          async shouldSkip(unit) {
+            const live = b.blockAt(new Vec3(unit.x, unit.y, unit.z));
+            if (!live) return true;
+            const expected = unit.meta?.expected;
+            if (expected && live.name !== expected && !isLogBlock(live.name) && !isLeafBlock(live.name)) {
+              return true;
+            }
+            return false;
+          },
+          async beforeUnit(unit) {
+            const live = b.blockAt(new Vec3(unit.x, unit.y, unit.z));
+            if (!live) return;
             if (b.entity.position.distanceTo(live.position) > 4.5) {
               try {
-                // eslint-disable-next-line no-await-in-loop
-                await pathfindGotoNear(b, goals, cell.x, cell.y + 1, cell.z, 3, { opName: 'fell_tree', capMs: ACTION_CAPS_MS.reach });
+                await pathfindGotoNear(b, goals, unit.x, unit.y + 1, unit.z, 3, { opName: 'fell_tree', capMs: ACTION_CAPS_MS.reach });
               } catch { /* dig may still succeed if close enough */ }
             }
-            // eslint-disable-next-line no-await-in-loop
-            await b.dig(live, true);
-            if (isLogBlock(live.name)) logsRemoved++;
-            else if (isLeafBlock(live.name)) leavesRemoved++;
-          } catch (err) {
-            failed++;
-            errors.push(`(${cell.x},${cell.y},${cell.z}): ${err?.message || err}`);
-          }
+          },
+          async act(unit) {
+            const live = b.blockAt(new Vec3(unit.x, unit.y, unit.z));
+            if (!live) return { status: 'skipped' };
+            try {
+              await equipForDig(b, live);
+              await b.dig(live, true);
+              if (isLogBlock(live.name)) logsRemoved++;
+              else if (isLeafBlock(live.name)) leavesRemoved++;
+              return { status: 'done' };
+            } catch (err) {
+              failed++;
+              errors.push(`(${unit.x},${unit.y},${unit.z}): ${err?.message || err}`);
+              return { status: 'failed' };
+            }
+          },
+        }, {
+          deadlineMs: deadline,
+          mode: 'remove',
+          shape: 'column',
+          interUnitDelayMs: 0,
+          sleep: async () => {},
+        });
+        if (clusterRun.stopReason === 'deadline') {
+          return fellPartial({ remaining_cells: totalCells - logsRemoved - leavesRemoved - failed });
+        }
+        if (clusterRun.stopReason === 'cancelled') {
+          return fellPartial({ remaining_cells: totalCells - logsRemoved - leavesRemoved - failed, cancelled: true });
         }
         // Per-cluster pickup so drops are collected before bot moves on.
         if (typeof pickup === 'function') {

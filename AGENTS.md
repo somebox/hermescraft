@@ -13,7 +13,7 @@ your tool calls land on real commands the first time.
 
 | Dir | What lives here |
 |---|---|
-| `bot/` | Mineflayer bot + `mc` CLI source (Node, `npm test` runs from here) |
+| `bot/` | Mineflayer bot + `mc` CLI source (Node, `npm test` runs from here). Bulk dig/fill motor: [`docs/architecture/execution-kernel.md`](docs/architecture/execution-kernel.md). |
 | `scripts/` | Ops scripts — kanban facade, roster, genesis, deploy, runtime spawner |
 | `prompts/landfolk/` | Per-role SOULs + per-cycle wake prompts + starter command lists |
 | `skills/` | Worker-facing skill library (loaded on demand via `skill_view`) |

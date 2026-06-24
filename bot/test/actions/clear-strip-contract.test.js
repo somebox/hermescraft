@@ -483,3 +483,26 @@ test('clear_strip road_mode: no tree in rect → no extension, no overhead', asy
   assert.equal(r.data.leaf_blocks_removed, 0);
   assert.equal(r.data.extension, undefined);
 });
+
+test('clear_strip passes preserveOrder to dig_area when kernel enabled', async () => {
+  const fixed = { '0,79,0': 'stone', '1,79,0': 'stone', '0,79,1': 'stone', '1,79,1': 'stone' };
+  const calls = [];
+  const prev = process.env.HERMES_EXEC_KERNEL;
+  process.env.HERMES_EXEC_KERNEL = '1';
+  try {
+    const part = makeRoadPart({
+      bot: makeBot(fixed),
+      digAreaCalls: calls,
+      digAreaImpl: async (args) => {
+        calls.push(args);
+        return { ok: true, dug: 4, skipped: 0 };
+      },
+    });
+    await part.clear_strip({ x1: 0, z1: 0, x2: 1, z2: 1, y: 78, height: 1 });
+    assert.ok(calls.length >= 1);
+    assert.equal(calls[0].preserveOrder, true);
+  } finally {
+    if (prev === undefined) delete process.env.HERMES_EXEC_KERNEL;
+    else process.env.HERMES_EXEC_KERNEL = prev;
+  }
+});
