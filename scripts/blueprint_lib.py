@@ -83,6 +83,18 @@ def floor_world_y(anchor: list[int], footprint: dict) -> int:
     return int(anchor[1] + (loc["y"][0] - my))
 
 
+def local_to_world(
+    anchor: list[int], footprint: dict, lx: int, ly: int, lz: int
+) -> tuple[int, int, int]:
+    """World block coords for plan-local (lx, ly, lz). Matches bot footprint.localToWorld."""
+    mx, my, mz = footprint_mins(footprint)
+    return (
+        int(anchor[0] + (lx - mx)),
+        int(anchor[1] + (ly - my)),
+        int(anchor[2] + (lz - mz)),
+    )
+
+
 def anchor_from_marker(marker: list[int], footprint: dict) -> list[int]:
     """Min-corner anchor: footprint center on marker XZ, floor Y = marker Y."""
     loc = footprint["local"]

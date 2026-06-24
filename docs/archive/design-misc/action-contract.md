@@ -64,9 +64,11 @@ Pure parsers live in `bot/lib/actions/_args.js`. Canonical shapes are documented
 
 Adoption is incremental: handlers call `_args` at the top and `return parsed.response` on failure.
 
+> **Archive note (2026-06):** Construct MVP shipped under `mc construct` with `HERMES_CONSTRUCT_CONTEXT=1`. Canonical contracts: [`docs/reference/bot/handler-contract-adr.md`](../../reference/bot/handler-contract-adr.md), [`docs/architecture/construct-canary.md`](../../architecture/construct-canary.md).
+
 ## Blueprint verify envelope
 
-`mc blueprint verify` uses the standard success/failure envelope. It does **not** emit `guided_edit_progress` (that shape is reserved for `mc construct` / blueprint-aware `mc repair` in [designated-regions Phase 2c](../specs/world/designated-regions.md)).
+`mc blueprint verify` uses the standard success/failure envelope. It does **not** emit `guided_edit_progress`.
 
 On success (`ok()`), `data` includes:
 
@@ -82,7 +84,7 @@ Inside the footprint, any cell not listed in `cells[]` is expected **air**. Fail
 
 ## Guided edit progress (construct / repair)
 
-When `mc construct` or blueprint-aware `mc repair` ship (Phase 2c), success responses should include `guided_edit_progress` alongside plan summaries (`plan_summary`, `materials_needed`, `verify_summary`, etc.). Until then, those verbs return `NOT_IMPLEMENTED` with a `next_action_hint` pointing at `mc blueprint verify` and manual place/dig.
+When construct context is active, scoped handlers emit `guided_edit_progress`. See the non-archive ADR § Guided edit progress and [`docs/architecture/execution-kernel.md`](../../architecture/execution-kernel.md).
 
 ## Test tagging
 

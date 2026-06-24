@@ -1,14 +1,59 @@
 # Blueprints (Grabcraft)
 
-Committed plans under `data/ops/plans/<plan_id>-plan.json` are the **single source of truth** for what should exist inside a blueprint footprint. Region placemark signs bind with `plan=<plan_id>`. Bots verify against the world; the steward mutates the plan (JSON edit or `mc blueprint adopt`) when in-world changes should become design.
+Committed **blueprint plans** under `data/ops/plans/<plan_id>-plan.json` are the **single source of truth** for what should exist inside a blueprint **footprint**. Region placemark signs bind with `plan=<plan_id>`. Bots verify against the world; the steward mutates the plan (JSON edit or `mc blueprint adopt`) when in-world changes should become design.
 
-See also: [designated-regions.md](./designated-regions.md) (Phase 2c guided construct/repair), [handler-contract ADR blueprint verify](../../reference/bot/handler-contract-adr.md#blueprint-verify-envelope), skill [`skills/minecraft-blueprints.md`](../../../skills/minecraft-blueprints.md).
+See also: [designated-regions.md](./designated-regions.md), [construct-canary.md](../../architecture/construct-canary.md), [handler-contract ADR blueprint verify](../../reference/bot/handler-contract-adr.md#blueprint-verify-envelope), skill [`skills/minecraft-blueprints.md`](../../../skills/minecraft-blueprints.md).
+
+## Terminology
+
+| Term | Meaning |
+|------|---------|
+| **Plan** / **blueprint plan** | On-disk JSON at `data/ops/plans/<plan_id>-plan.json` (not the raw GrabCraft download format). |
+| **Footprint** | Axis-aligned box in **plan-local** coordinates (`footprint.local` inclusive ranges). World position: `localToWorld(anchor.coords, footprint, lx, ly, lz)` — anchor is the world block at the footprint **minimum** local corner (`footprint_mins`). |
+| **Schematic** (informal) | Same plan file; used in ops script names (`capture-schematic-rcon`, `place-schematic-rcon`) for RCON capture/paste workflows. |
+| **Construct mode** | Scoped `mc fill` / `place` / `dig` against a plan **workset** when `HERMES_CONSTRUCT_CONTEXT=1` and a CONSTRUCT card binds `plan` + `phase` + `worksite` (or `mc construct begin`). See [construct-canary.md](../../architecture/construct-canary.md). |
+| **Verify** | Read-only `mc blueprint verify` — compares world blocks to `cells[]` inside the footprint (block **states** are a v1 gap; see below). |
 
 ## Plan file shape
 
-Each plan includes `plan_id`, `footprint` (`mode: tight|metadata`, `local` axis ranges), `anchor.coords`, `cells[]` with `{ local: [x,y,z], block }`, and optional `history[]`. **`cells_index` is never stored on disk** — loaders build it in memory.
+Required for all committed plans:
+
+| Field | Notes |
+|-------|--------|
+| `plan_id` | Lowercase slug matching `^[a-z0-9][a-z0-9_-]{1,40}$` (loaders normalize). |
+| `footprint` | `local`: `{ x: [min,max], y: [min,max], z: [min,max] }` inclusive; `mode` documents origin (see below). |
+| `anchor.coords` | World `[x,y,z]` of the footprint **minimum** local corner (same as `footprint_mins`; not always local `[0,0,0]` for `metadata` footprints). |
+| `cells[]` | `{ local: [x,y,z], block }` — non-air blocks only unless you intentionally model air as a cell. |
+
+Common optional fields:
+
+| Field | Notes |
+|-------|--------|
+| `kind` | e.g. `"construct"` for construct-MVP fixtures. |
+| `revision` | Plan revision string for card `plan_revision` / `PLAN_REVISION_MISMATCH` (E5). |
+| `source` | Provenance (`genesis`, `captured`, GrabCraft import metadata, etc.). |
+| `anchor.marker` | World `coords`, plan `local`, and `note` for origin sign / door reference. |
+| `phases`, `gates`, `materials_by_phase` | Construct cards and `mc construct end` gates (`starter_shelter` fixture). |
+| `door_gap.face` | Optional perimeter face for `door_traversable` end gate: `min_z` \| `max_z` \| `min_x` \| `max_x`. Default: face with the most wall-height gaps. |
+| `materials_planned` | Aggregate counts (GrabCraft import or RCON capture). |
+| `history[]` | Steward/adopt/capture audit trail. |
+| Per-cell `block_state` | Full predicate string for paste/import (RCON capture, future verify). |
+| Per-cell `sign_text` | Captured sign lines; RCON paste applies front line 1 via `data modify` unless overridden. |
+| Per-cell `block_entity_data` | Debug/audit from capture; not replayed on paste. |
+
+**`cells_index` is never stored on disk** — loaders build it in memory.
+
+**Footprint `mode` values:**
+
+| `mode` | Typical source |
+|--------|----------------|
+| `tight` | Derived from `cells[]` or explicit genesis/construct fixture. |
+| `metadata` | GrabCraft width/height/depth box from `blueprint-plan.py`. |
+| `capture_bounds` | RCON capture box (`capture-schematic-rcon.py`). |
 
 **Footprint rule:** inside `footprint.local`, any coordinate not present in `cells[]` is expected **air**. Outside the footprint, verify is silent (staging chests, crafting tables, etc.).
+
+Reference fixtures: [`starter_shelter-plan.json`](../../data/ops/plans/starter_shelter-plan.json) (construct MVP), [`re44-house-plan.json`](../../data/ops/plans/re44-house-plan.json) (RCON capture sample).
 
 Import from GrabCraft:
 
@@ -25,6 +70,39 @@ Offline inspection:
 python3 scripts/blueprint-tool.py show dystopian-hut-3
 python3 scripts/blueprint-tool.py audit
 ```
+
+### RCON schematic capture and paste (ops / tests)
+
+For hand-built structures or construct canary fixtures without GrabCraft, use read-only RCON capture and paste scripts (same `server.local.yaml` / mapcatalog client as genesis). They read and write the same **blueprint plan** JSON under `data/ops/plans/` (not a separate file format).
+
+**Capture** a bounded volume into a plan:
+
+```bash
+python3 scripts/capture-schematic-rcon.py my-shelter \
+  --corners 380,86,-612 385,90,-607 \
+  --expand-xz 1 \
+  --origin-marker 386,87,-607 \
+  --world minecraft:overworld \
+  --force
+```
+
+**Paste** a plan at coordinates or centered on a player (chunks must be loaded at the destination):
+
+```bash
+python3 scripts/place-schematic-rcon.py my-shelter --at 409,79,-596 --anchor-mode min_corner
+python3 scripts/place-schematic-rcon.py re44-house --at-player re44
+python3 scripts/place-schematic-rcon.py re44-house --at-player re44 --sign-front "Canary A"
+python3 scripts/place-schematic-rcon.py re44-house --at 409,79,-596 --dry-run
+```
+
+| Script | Role |
+|--------|------|
+| [`scripts/capture-schematic-rcon.py`](../../scripts/capture-schematic-rcon.py) | Scan bounds → `cells[]`, optional `sign_text` / block states |
+| [`scripts/place-schematic-rcon.py`](../../scripts/place-schematic-rcon.py) | `setblock` paste; `--sign-front` or plan `sign_text` on signs |
+
+Paste applies **block state** from capture; **chest contents** are not restored. Sign front line 1 is set with `data modify` after paste — from plan `sign_text` by default (`--no-plan-sign-text` to skip) or from `--sign-front`.
+
+Useful for Tier 2 fixture prep, construct canary pad sites, and cloning reference builds before `mc construct` scenarios — see [`docs/guides/test-overview.md`](../guides/test-overview.md) and [`docs/architecture/construct-canary.md`](../architecture/construct-canary.md).
 
 In-game (bot HTTP / `mc` CLI):
 
@@ -44,11 +122,20 @@ Target resolution: `:region:` requires `plan=` on the region row; bare `plan_id`
 
 Env-overridable caps (shared JS + Python): `BLUEPRINT_MAX_CELLS` (50k), `BLUEPRINT_MAX_FOOTPRINT_VOLUME` (200k), `BLUEPRINT_VERIFY_MAX_CELLS_PER_CALL` (2k), `BLUEPRINT_CAPTURE_MAX_REGION_RADIUS` (64). Verify `--all` truncates with `truncated: true` and `next_hint`.
 
-## Construct and repair
+## Construct, verify, and repair
 
-`mc construct` and blueprint-aware `mc repair` depend on designated-regions **Phase 2c** (guided edit, worksite grants). Current builds use `mc blueprint layer`, existing `mc fill` / `mc wall` / `mc place`, and phase-scoped `mc blueprint verify`. Stubs return `NOT_IMPLEMENTED` until Phase 2c lands.
+| Path | When |
+|------|------|
+| **`mc blueprint verify`** | Read-only audit anytime (`summary: ok/missing/wrong/extra`). No bot construct flag required. |
+| **Construct mode** | `HERMES_CONSTRUCT_CONTEXT=1` + CONSTRUCT card (`plan`, `phase`, `worksite`) or `mc construct begin` / `show` / `end`. Workers use scoped **`mc fill` / `place` / `dig`** (not `mc wall`). Responses include `guided_edit_progress` when context is active. |
+| **`mc blueprint adopt` / `capture`** | Steward mutations (`HERMES_BLUEPRINT_MUTATORS`); in-bot region capture writes the same plan shape as offline tools. |
+| **RCON paste** | `place-schematic-rcon.py` — instant world stamp for tests/fixtures; not a substitute for construct session gates. |
 
-**May 2026:** Both verbs appear in the generated cheatsheet (`building` category) but had **zero** 7-day fleet calls — agents are not routed to them yet. When 2c ships, teach via genesis mason cards and re-run `scripts/mc-call-survey.py`; consider grouping placement + construct under a `mc build` help namespace ([`observation-verb-grammar.md`](../mc/observation-verb-grammar.md) simplification list).
+Blueprint-aware **`mc repair`** remains partial / fleet-rare; prefer verify + adopt or construct workset edits.
+
+Rollout checklist: [`docs/architecture/construct-canary.md`](../../architecture/construct-canary.md). Worker skill: [`skills/minecraft-building.md`](../../../skills/minecraft-building.md) § Schematic construct mode. Card emit: [`scripts/construct-plan-cards.py`](../../scripts/construct-plan-cards.py) + [`scripts/lib/plan_supply.py`](../../scripts/lib/plan_supply.py).
+
+**May 2026 fleet note:** `mc construct` is implemented behind `HERMES_CONSTRUCT_CONTEXT`; production workers may still run unscoped motors until G1 rollout. Cheatsheet survey: [`observation-verb-grammar.md`](../mc/observation-verb-grammar.md).
 
 ## GrabCraft downloader
 

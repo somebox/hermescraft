@@ -223,7 +223,7 @@ Temporary ad-hoc edit inside a **protect** region for one kanban card:
 ## Known limitations (Phase 1)
 
 - **Single-writer JSON:** multiple bots do not auto-invalidate in-memory region cache; treat admin as one writer until reload discipline improves.
-- **Guided edit:** resolver supports guided branches; most verbs still default to ad-hoc — Phase 2c wires `mc construct` / blueprint repair envelopes (see archive full doc).
+- **Guided edit:** construct mode scopes `fill`/`place`/`dig` to a plan workset when `HERMES_CONSTRUCT_CONTEXT=1` (see [`construct-canary.md`](../../architecture/construct-canary.md)). Resolver guided branches exist; ad-hoc defaults apply when construct context is off.
 - **LAN trust:** bot HTTP auth unchanged.
 
 ## Quick verification
@@ -242,6 +242,6 @@ Full Path A/B tables: [`designated-regions-verification.md`](./designated-region
 
 ## Related
 
-- [`blueprints-grabcraft.md`](./blueprints-grabcraft.md) — `mc blueprint verify`; Phase 2c `mc construct` / `guided_edit_progress` in archive full spec.
+- [`blueprints-grabcraft.md`](./blueprints-grabcraft.md) — plan JSON, verify, RCON capture/paste, construct mode.
 - [`architecture/bots-and-mc.md`](../../architecture/bots-and-mc.md) — fleet marks and regions authority.
 - [`reference/mc-command-reference.md`](../../reference/mc-command-reference.md) — memory/building verb taxonomy.

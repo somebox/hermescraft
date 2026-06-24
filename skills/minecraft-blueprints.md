@@ -6,12 +6,12 @@ triggers:
   - mc blueprint
   - plan_id
   - footprint
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Minecraft blueprints
 
-Plans live at `data/ops/plans/<plan_id>-plan.json`. Regions bind with `plan=<plan_id>` on the placemark sign (see [designated-regions](../docs/specs/world/designated-regions.md)).
+Canonical plan shape and terminology: [blueprints-grabcraft](../docs/specs/world/blueprints-grabcraft.md). Plans live at `data/ops/plans/<plan_id>-plan.json`. Regions bind with `plan=<plan_id>` on the placemark sign (see [designated-regions](../docs/specs/world/designated-regions.md)).
 
 ## Read-only
 
@@ -30,25 +30,31 @@ Phase flags: `--level N`, `--range Y1..Y2`, `--at X Y Z`. Full scans truncate at
 
 Offline: `python3 scripts/blueprint-tool.py show|cell|layer|materials|verify-offline|audit …`
 
+**RCON capture/paste** (no bot, ops/tests): `scripts/capture-schematic-rcon.py` → blueprint plan JSON; `scripts/place-schematic-rcon.py` → world (`--sign-front`, `--at` / `--at-player`). Same on-disk format as bot capture.
+
 ## Steward mutations
 
 ```bash
 # Requires HERMES_BLUEPRINT_MUTATORS=<bot-usernames>
 mc blueprint adopt :hut3: --at X Y Z --note "reason"
-mc blueprint capture cabin1 --region :cabin1: --force
+mc blueprint capture cabin1 --region :cabin1: --force   # in-bot region scan → plan file
 ```
 
-Air at adopt target **removes** the cell from `cells[]`. Capture scans a region and writes a new plan file.
+Air at adopt target **removes** the cell from `cells[]`. Bot capture requires `--region :id:` (v1).
 
 ## Workers
 
-1. `mc task_context set <worksite>` when the construct card grants a region.
+**Construct mode** (CONSTRUCT cards, `HERMES_CONSTRUCT_CONTEXT=1`): follow [`minecraft-building.md`](minecraft-building.md) § Schematic construct mode — `mc task_context set`, scoped `fill`/`place`/`dig`, `mc construct show` / `end`. Do not use `mc wall` inside the workset.
+
+**Verify-only / legacy layer builds:**
+
+1. `mc task_context set <worksite>` when the card grants a region.
 2. `mc blueprint layer <plan_id> --y N` for expected blocks.
 3. Build with `mc fill`, `mc wall`, `mc place` until phase verify is clean:
    `mc blueprint verify :region: --level N`
 4. `missing` → place; `wrong` → dig/replace; `extra` → dig (respect region policy).
 
-`mc construct` / blueprint `mc repair` return `NOT_IMPLEMENTED` until Phase 2c — do not wait on them.
+`mc blueprint verify` is always valid for read-only audits. Blueprint-aware **`mc repair`** is not the primary worker path.
 
 ## Docs
 
