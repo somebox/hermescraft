@@ -18,7 +18,7 @@
       },
       "created": "{started_at}",
       "updated": "{started_at}",
-      "notes": "Genesis-v2 boot region {run_id} — buildable shelter pad only. Do NOT add protect shells here. Structure is rcon-rendered after base_anchor."
+      "notes": "Genesis-v2 boot region {run_id} — buildable shelter worksite. plan=starter_shelter patched at footprint min when base_anchor is set; workers build via filed CONSTRUCT/VERIFY cards (not rcon shell)."
     }
   ]
 }

@@ -7,7 +7,8 @@ Manual and semi-automated checks before enabling `HERMES_CONSTRUCT_CONTEXT=1` fl
 - Tester bot (or one worker profile) with `HERMES_CONSTRUCT_CONTEXT=1`
 - `starter_shelter` plan on disk; region `plan=starter_shelter` + worksite grant
 - Optional: paste a reference shell with `python3 scripts/place-schematic-rcon.py <plan_id> --at-player <name> --sign-front "<label>"` (RCON; [`blueprints-grabcraft.md`](../specs/world/blueprints-grabcraft.md))
-- Automated regression (no world): `cd bot && node --test test/runtime/construct-*.test.js test/actions/construct-*.test.js`
+- Automated regression (no world): `cd bot && node --test test/runtime/construct-*.test.js test/actions/construct-*.test.js test/http-app.test.js`
+- Node vs arena parity (Track D2): [`docs/testing/construct-node-arena-parity.md`](../testing/construct-node-arena-parity.md)
 - Python validator: `python3 -m unittest scripts.tests.test_gv2_card_validator.SchematicConstructValidatorTest`
 - Arena (optional): `pytest tests/functional/building/test_construct_scoped.py -m functional`
 
@@ -33,7 +34,7 @@ Manual steps below remain the steward checklist; pytest is the repeatable gate b
 | Item | Status |
 |------|--------|
 | **G1** fleet `HERMES_CONSTRUCT_CONTEXT=1` on landfolk workers | Tester only |
-| **E4** planner SUPPLY from `materials_by_phase` | [`scripts/lib/plan_supply.py`](../../scripts/lib/plan_supply.py) + [`scripts/construct-plan-cards.py`](../../scripts/construct-plan-cards.py) (`--dry-run` / `--file`) |
+| **E4** planner SUPPLY from `materials_by_phase` | [`scripts/lib/plan_supply.py`](../../scripts/lib/plan_supply.py) + [`scripts/construct-plan-cards.py`](../../scripts/construct-plan-cards.py); gv2 poller auto-files full phase chain via [`scripts/lib/gv2_schematic_shelter.py`](../../scripts/lib/gv2_schematic_shelter.py) |
 | **E3** overlap / full gv2 CONSTRUCT body rules for schematic cards | Partial (`SchematicConstructValidatorTest` only) |
 | **C7** `guided_edit_progress` on every motor success path | Partial (place/fill/dig wired) |
 | **Canary C** plan revision drift | `test_construct_canary_scenario_c_plan_revision_mismatch` |

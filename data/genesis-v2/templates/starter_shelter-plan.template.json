@@ -1,0 +1,5 @@
+{
+  "_comment": "Rendered by genesis2_lib: copies starter_shelter plan and patches anchor.coords to footprint minimum from base_anchor",
+  "source_plan": "data/ops/plans/starter_shelter-plan.json",
+  "marker_offset": { "dx": 3, "dy": 0, "dz": -1 }
+}

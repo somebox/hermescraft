@@ -25,15 +25,15 @@
   },
   "anchor": {
     "coords": [
-      0,
-      64,
-      0
+      -170,
+      70,
+      -250
     ],
     "marker": {
       "coords": [
-        3,
-        64,
-        -1
+        -167,
+        70,
+        -251
       ],
       "note": "sign south of door gap"
     }

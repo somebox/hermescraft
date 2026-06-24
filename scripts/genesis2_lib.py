@@ -688,8 +688,22 @@ def wipe_world_mines(world: str) -> None:
                 sp.write_text(json.dumps(doc, indent=2) + "\n")
 
 
+def shelter_site_prep_commands(world: str, ox: int, oy: int, oz: int) -> list[str]:
+    """Drain/apron foundation under the 7×7 footprint minimum (ox,oy,oz); no shell walls."""
+    margin = 2
+    x0, x1 = ox - margin, ox + 6 + margin
+    z0, z1 = oz - margin, oz + 6 + margin
+    floor_y = oy
+    cmds: list[str] = [
+        f"fill {x0} {floor_y - 1} {z0} {x1} {floor_y} {z1} minecraft:cobblestone",
+        f"fill {x0} {floor_y + 1} {z0} {x1} {floor_y + 3} {z1} minecraft:air replace minecraft:water",
+        f"fill {ox} {floor_y + 1} {oz} {ox + 6} {floor_y + 4} {oz + 6} air replace",
+    ]
+    return [f"execute in {world} run {c}" for c in cmds]
+
+
 def shelter_setblock_commands(world: str, ax: int, ay: int, az: int) -> list[str]:
-    """7×7 shelter with E/W-traversable east-facing door; returns `execute in world run ...` cmds."""
+    """Legacy reference shell (center anchor). Prefer schematic construct cards in gv2."""
     floor_y = ay - 1
     wall_h = 3
     roof_y = ay + wall_h
@@ -762,7 +776,7 @@ def render_shelter_structure(world: str, anchor: dict[str, int]) -> None:
         _rcon(batch[i : i + 40])
 
 
-def reposition_shelter_region(anchor: dict[str, int], run_id: str) -> None:
+def reposition_shelter_region(anchor: dict[str, int], run_id: str, *, plan_id: str = "starter_shelter") -> None:
     path = DATA_DIR / "regions-world.json"
     data = gl._load_json(path, default={"regions": []})
     regions = data.get("regions") or []
@@ -771,6 +785,13 @@ def reposition_shelter_region(anchor: dict[str, int], run_id: str) -> None:
             reg["anchor"] = {"x": anchor["x"], "y": anchor["y"], "z": anchor["z"]}
             reg["status"] = "active"
             reg["updated"] = gl._iso_utc()
+            reg["notes"] = (
+                f"Genesis-v2 shelter worksite {run_id} — plan={plan_id} at footprint min "
+                f"(see data/ops/plans/{plan_id}-plan.json). Build via filed CONSTRUCT cards."
+            )
+            sites = reg.get("sites") or {}
+            sites["plan"] = plan_id
+            reg["sites"] = sites
     data["regions"] = regions
     path.write_text(json.dumps(data, indent=2) + "\n")
 
@@ -837,23 +858,90 @@ def _base_anchor_coords() -> dict[str, int] | None:
     return {"x": int(m["x"]), "y": int(m["y"]), "z": int(m["z"])}
 
 
-def maybe_render_shelter_for_run(run_id: str) -> bool:
-    """Option A: rcon-render shelter once base_anchor exists (idempotent per run)."""
+def _kanban_json(args: list[str]) -> dict:
+    p = _hermes(args, timeout=90)
+    if p.returncode != 0:
+        raise RuntimeError(f"kanban failed: {p.stderr[:400] or p.stdout[:400]}")
+    return json.loads(p.stdout or "{}")
+
+
+def _find_card_id_by_title_substring(sub: str) -> str | None:
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        return None
+    sub_l = sub.lower()
+    for t in tasks:
+        title = (t.get("title") or "").lower()
+        if sub_l in title and (t.get("status") or "").lower() != "archived":
+            return str(t.get("id"))
+    return None
+
+
+def maybe_bootstrap_schematic_shelter_for_run(run_id: str) -> bool:
+    """Patch starter_shelter plan, site-prep pad, file CONSTRUCT/VERIFY card chain (once per run)."""
+    from lib.gv2_schematic_shelter import (
+        file_starter_shelter_sequence,
+        footprint_min_from_base_anchor,
+        patch_starter_shelter_plan,
+    )
+    # shelter_site_prep_commands is defined in THIS module (above) — not in
+    # gv2_schematic_shelter; importing it from there crashed the whole bootstrap
+    # ("cannot import name ... from lib.gv2_schematic_shelter", gv2-2026-06-24-1).
+
     cfg = load_config(run_id)
-    if cfg.get("shelter_rendered"):
+    if cfg.get("schematic_shelter_bootstrapped"):
         return False
-    anchor = _base_anchor_coords()
-    if not anchor:
+    base = _base_anchor_coords()
+    if not base:
         return False
     world = cfg.get("world") or "genesis2"
-    render_shelter_structure(world, anchor)
-    reposition_shelter_region(anchor, run_id)
-    mark_shelter_chests(anchor)  # provided storage is marked + known at render time
-    write_starter_provision_snapshot(anchor)  # starter pantry the P2 food gate can see
-    cfg["shelter_rendered"] = True
-    cfg["shelter_anchor"] = anchor
+    ox, oy, oz = footprint_min_from_base_anchor(base)
+    run_dir_path = run_dir(run_id)
+    plan = patch_starter_shelter_plan(
+        REPO_ROOT,
+        DATA_DIR,
+        base,
+        run_rendered_dir=run_dir_path / "rendered",
+    )
+    if not cfg.get("shelter_site_prepped"):
+        batch = shelter_site_prep_commands(world, ox, oy, oz)
+        rcon_in(world, [f"forceload add {ox >> 4} {oz >> 4}"])
+        for i in range(0, len(batch), 40):
+            _rcon(batch[i : i + 40])
+        cfg["shelter_site_prepped"] = True
+
+    footprint_anchor = {"x": ox, "y": oy, "z": oz}
+    reposition_shelter_region(footprint_anchor, run_id)
+
+    epic_ids = cfg.get("epic_ids") or []
+    epic_p1 = str(epic_ids[0]) if epic_ids else None
+    after = _find_card_id_by_title_substring("base-clear")
+
+    def kanban_run(args: list[str]) -> dict:
+        return _kanban_json(args)
+
+    filed = file_starter_shelter_sequence(
+        kanban_run,
+        plan=plan,
+        epic_for=epic_p1,
+        anchor_mark="base_anchor",
+        checkout_near="base_anchor",
+        after_card_id=after,
+        base_anchor=base,
+    )
+    cfg["schematic_shelter_bootstrapped"] = True
+    cfg["schematic_shelter_cards"] = filed
+    cfg["shelter_footprint_min"] = {"x": ox, "y": oy, "z": oz}
+    cfg["shelter_rendered"] = False  # legacy flag — shell built by workers
     save_config(cfg)
     return True
+
+
+def maybe_render_shelter_for_run(run_id: str) -> bool:
+    """Bootstrap schematic shelter workflow (plan patch + site prep + kanban cards)."""
+    return maybe_bootstrap_schematic_shelter_for_run(run_id)
 
 
 def _is_pool_gated_worker(t: dict, epic_ids: set[str]) -> bool:

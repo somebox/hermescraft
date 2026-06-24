@@ -212,8 +212,8 @@ def main() -> int:
             except Exception:
                 pass
         try:
-            if not retro_mode and not emergent and g2.maybe_render_shelter_for_run(args.run_id):
-                sys.stderr.write("[poller] shelter structure rcon-rendered at base_anchor\n")
+            if not retro_mode and g2.maybe_bootstrap_schematic_shelter_for_run(args.run_id):
+                sys.stderr.write("[poller] starter_shelter plan patched, site prepped, schematic cards filed\n")
         except Exception as e:
             sys.stderr.write(f"[poller] shelter render failed: {e}\n")
         # Poller-authoritative advance: complete the epic whose real-world gate

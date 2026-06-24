@@ -100,10 +100,10 @@ Role clarity in seeded flow:
 | # | Item | Why | Where | Verify |
 |---|------|-----|-------|--------|
 | F0 | Gateway up only after seed | see A5 | `genesis-v2.sh` python block | no `spawned=` in gateway.log between clean shutdown and `run … live` |
-| F1 | Shelter render once `base_anchor` exists | bots built into terrain / couldn't exit | `genesis2_lib.maybe_render_shelter_for_run` (poller) | `cfg.shelter_rendered=True` |
-| F2 | **Dry, solid foundation** — force cobble pad + drain water under/around the base | base sited over water drowned the colony | `shelter_setblock_commands` (foundation fill + `air replace water`) | no drowning; base walkable |
-| F3 | **Chests pre-marked** — `chest_wood`+`chest_food` written at render | render PROVIDES the chests; BUILD churned ~20m trying to place a 2nd one it had no materials for | `genesis2_lib.mark_shelter_chests` | `mc marks` shows 2 `chest_*` at base |
-| F3b | **Starter food pantry** — render rcon-stocks `chest_food` with `STARTER_FOOD_COUNT` bread + writes a render snapshot base-inventory reads | colony can't build a cooking loop early; bots starved + P2 dead-locked at `food 2/64` | `genesis2_lib.{shelter_setblock_commands,write_starter_provision_snapshot}` + `base-inventory.load_render_snapshots` | P2 food gate clears at boot; a later live chest snapshot supersedes the pantry |
+| F1 | Schematic shelter bootstrap once `base_anchor` exists | plan-backed build instead of monolithic rcon shell | `genesis2_lib.maybe_bootstrap_schematic_shelter_for_run` (poller) | `cfg.schematic_shelter_bootstrapped=True`; board shows L0→L4 CONSTRUCT/VERIFY chain |
+| F2 | **Dry, solid foundation** — site prep pad only (cobble + drain water under footprint) | base sited over water drowned the colony | `shelter_site_prep_commands` via poller bootstrap | no drowning; footprint walkable before L0 CONSTRUCT |
+| F3 | **Chest marks after schematic build** — `[CONSTRUCT] shelter storage chests + marks` card at tail of chain | P1 gate needs `chest_*` marks; plan has no chest cells | filed by `file_starter_shelter_sequence` | `mc marks` shows 2 `chest_*` after that card |
+| F3b | *(optional)* **Reference paste** for ops review | compare world to plan without workers | `scripts/place-schematic-rcon.py starter_shelter --at …` | matches `mc blueprint verify` |
 | F4 | Poller skill-strip backstop | null `skills` on worker cards the planner poisoned + unblock | `strip_worker_card_skills` (poller step 1) | poller log "stripped … skills" (only if poisoned) |
 | F5 | Gateway watchdog (no false-positive) | restart ONLY when ready work waits AND nothing is running (running>0 proves dispatch alive); `todo`-on-deps and ready-behind-a-full-pool are backpressure, not death — both thrashed the gateway + killed agents before this gate | `detect_dead_dispatch` (`ready>0 and running==0`) | ~0 restarts on a healthy run |
 | F6 | SUPPLY cards target the resource SOURCE | "mine stone near base_anchor" wedged miners in the cramped shelter on a grass plain | `_supply_source` + `file_supply_card` | SUPPLY card body says `go_mark lt_stone_*`, not base |
@@ -114,7 +114,7 @@ Role clarity in seeded flow:
 | # | Item | Why | Where | Verify |
 |---|------|-----|-------|--------|
 | G1 | Seed one standing `[MISSION]` card only | no phase epics/gates in emergent mode | `seed_emergent_mission` | board has mission, no P1..P5 epics |
-| G2 | Poller disables phase/render/supply auto-cards, keeps control-plane backstops | planner owns decomposition; poller still prevents deadlocks/stalls | `genesis-v2-poller.py` emergent branch | poller log prints emergent-mode line |
+| G2 | Poller disables phase/render/supply auto-cards, keeps control-plane backstops | planner owns decomposition; poller still prevents deadlocks/stalls. **Schematic shelter bootstrap** (plan patch + site prep + CONSTRUCT/VERIFY chain) still runs when `base_anchor` is set — same as phased F1. | `genesis-v2-poller.py` emergent branch | poller log prints emergent-mode line; schematic cards on board after anchor |
 | G3 | Mission continuity uses same-card retry first | avoids MANAGE churn and preserves card continuity | `reengage_planner_if_mission_closed` | closed mission gets `retry`; fallback MANAGE only on retry failure |
 | G4 | Planner mission protocol is terminal-per-turn | dispatcher requires complete/block on dispatched turns | `data/genesis-v2/emergent-mission.md`, `emergent-planner-soul.md` | no `protocol_violation`/`gave_up` loop on mission turn exits |
 | G5 | Spawn: auto dry land or operator `--spawn` | same pin semantics as gated `new-run`; no water requirement on auto | `genesis-v2.sh` emergent-run | log shows pinned or dry land spawn; `config.json` has `spawn_source` |

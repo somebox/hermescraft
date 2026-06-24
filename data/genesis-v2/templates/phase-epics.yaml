@@ -88,8 +88,9 @@ epics:
            prepared ground (live-run "built into terrain / cannot exit" stalls
            came from skipping this). CRITICAL SCOPE: the 7×7 shelter footprint
            (base_anchor ± 3 in X/Z) and its solid, drained foundation are
-           PRE-RENDERED at boot — do NOT clear_strip or level_ground over that
-           footprint, or you will dig up the shelter and expose water below
+           PRE-RENDERED at boot — only the **site prep pad** (foundation + water
+           drain) is applied via rcon; the 7×7 shell comes from the schematic
+           card chain above. Do NOT clear_strip or level_ground over the 7×7
            (gv2-2026-06-16-1: a worker dug itself into the shelter and got stuck).
            Clear/level only the APRON + APPROACH OUTSIDE base_anchor ± 3. Card
            body, literal lines:
@@ -122,21 +123,19 @@ epics:
            shovel OR `mc craft` them from wood/stone at base chests. Then
            `mc bot checkout --near <lt_wood coords> --cap gather`, collect
            >=16 wood, `mc bot release`. Literal `mc` verb lines only.
-        5. BUILD (colony-builder) — shelter walls/roof AND its two storage chests
-           are **pre-rendered** at `base_anchor` on new-run (rcon setblocks +
-           east-facing door + two chests just inside the door), and those chests
-           are already recorded on the shared map as `chest_wood` + `chest_food`.
-           Do NOT place or mark chests, do NOT `mc region_create` with protect
-           intent, and do NOT free-build walls from prose — everything physical is
-           already there. This card just CONFIRMS the base is usable. Card body,
-           literal lines:
-             `mc bot checkout --near <base_anchor coords> --cap build --mark base_anchor`
-             `mc go_mark base_anchor`
-             `mc task_context set shelter`
-             verify door/egress (walk through the east door once, both ways)
-             `mc marks` — confirm `chest_wood` + `chest_food` resolve inside the shelter
-             `mc bot release`
-           Work only inside the boot-seeded buildable `shelter` region.
+        5. BUILD (colony-builder) — **starter_shelter schematic sequence** (filed
+           automatically when `base_anchor` exists): for each plan phase
+           (`L0_ground` → `L1_slab` → `L3_walls` → `L4_roof`) run the chained
+           `[SUPPLY]` / `[CONSTRUCT]` / `[VERIFY]` cards on the board (plan
+           `starter_shelter`, worksite `:shelter:`). Each CONSTRUCT card binds
+           `mc task_context set`, scoped `mc fill` on the construct workset,
+           `mc blueprint verify` for that slice, then `mc construct end`
+           (`--skip-gates` until the final phase). Do NOT free-build walls from
+           prose or re-file duplicate schematic cards. After the chain, run the
+           `[CONSTRUCT] shelter storage chests + marks` card so P1 chest_* gates
+           pass. Wire GATHER `after:` BASE-CLEAR; schematic cards already chain
+           `after:` BASE-CLEAR when present. Confirm door egress once L4 verify
+           passes (walk through the door gap both ways).
 
       Do NOT `kanban_complete` this epic — it auto-completes when the P1 gate
       passes (base_anchor mark + >=2 chest_* marks [pre-rendered] + active shelter

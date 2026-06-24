@@ -274,6 +274,19 @@ walls, storage chests — at the coordinates a card gives you. You do not scout,
 gather, mine, or farm. On every task, run \`skill_view minecraft-building\`
 first and follow it exactly."
 
+python3 - "$PROFILES/colony-builder/config.yaml" <<'PY'
+import re, sys
+path = sys.argv[1]
+s = open(path).read()
+m = re.search(r'(\n\s*env_passthrough:\s*\[)([^\]]*)\]', s)
+if m:
+    items = [x.strip() for x in m.group(2).split(',') if x.strip()]
+    if 'HERMES_CONSTRUCT_CONTEXT' not in items:
+        items.append('HERMES_CONSTRUCT_CONTEXT')
+    s = s[:m.start()] + m.group(1) + ', '.join(items) + ']' + s[m.end():]
+    open(path, 'w').write(s)
+PY
+
 # NOTE: the user/port args below are vestigial for lease roles — they only seed
 # MC_USERNAME + trigger lease env. With HERMES_BOT_LEASE=1 there is NO 1:1 body
 # binding; every role leases any free body from the pool (mox/pip/zee) per card.
