@@ -33,7 +33,15 @@ MINING_ZONE = (
     ARENA_HALF,
 )
 LAB_CENTER = (-16, ARENA_FEET_Y, 0)
-MINING_CENTER = (16, ARENA_FEET_Y, 0)
+MINING_CENTER = (4, ARENA_FEET_Y, 0)
+
+# Specialty pads — lean arena partitions (see docs/testing/arena-spatial-audit.md).
+PAD_ORIGIN = (-8, ARENA_FLOOR_Y, -8, 8, ARENA_AIR_TOP_Y, 8)
+PAD_EAST = (1, ARENA_FLOOR_Y, -8, 16, ARENA_AIR_TOP_Y, 8)
+PAD_SOUTH = (-8, ARENA_FLOOR_Y, 8, 8, ARENA_AIR_TOP_Y, 16)
+PAD_WEST = (-16, ARENA_FLOOR_Y, -8, -1, ARENA_AIR_TOP_Y, 8)
+# Session prefab bake slab on the west pad (was x=40..56; kept clear of harness origin).
+PREFAB_BAKE_PAD = (-12, 64, -8, -4, 67, 8)
 
 
 def lay_ground_substrate_session(rcon, world: str) -> None:
@@ -166,7 +174,8 @@ def bake_prefabs_session(arena) -> list[str]:
     """Build canonical prefabs once at session start; return prefab names baked."""
     rcon = arena.rcon
     world = arena.world
-    pad = (40, 64, -8, 56, 67, 8)
+    pad = PREFAB_BAKE_PAD
+    vx = pad[0]
     rcon.batch([
         f"execute in {world} run fill {pad[0]} {pad[1]} {pad[2]} "
         f"{pad[3]} {pad[4]} {pad[5]} minecraft:air",
@@ -176,18 +185,18 @@ def bake_prefabs_session(arena) -> list[str]:
     for x in range(0, 5, 2):
         for z in range(0, 5, 2):
             cmds.append(
-                f"execute in {world} run setblock {40 + x} 65 {z} minecraft:cobblestone"
+                f"execute in {world} run setblock {vx + x} 65 {z} minecraft:cobblestone"
             )
     rcon.batch(cmds)
-    arena.save_prefab("mining_grid_3x3", (40, 65, 0, 44, 65, 4))
+    arena.save_prefab("mining_grid_3x3", (vx, 65, 0, vx + 4, 65, 4))
 
     rcon.batch([
-        f"execute in {world} run setblock 46 65 0 minecraft:obsidian",
-        f"execute in {world} run setblock 46 66 0 minecraft:obsidian",
+        f"execute in {world} run setblock {vx + 6} 65 0 minecraft:obsidian",
+        f"execute in {world} run setblock {vx + 6} 66 0 minecraft:obsidian",
     ])
-    arena.save_prefab("los_wall", (46, 65, 0, 46, 66, 0))
+    arena.save_prefab("los_wall", (vx + 6, 65, 0, vx + 6, 66, 0))
 
-    cx, cy, cz = 48, 65, 4
+    cx, cy, cz = vx + 8, 65, 4
     rcon.batch([
         f"execute in {world} run fill {cx-1} {cy-1} {cz-1} {cx+1} {cy-1} {cz+1} minecraft:bedrock",
         f"execute in {world} run fill {cx-1} {cy} {cz-1} {cx+1} {cy+3} {cz+1} minecraft:air",

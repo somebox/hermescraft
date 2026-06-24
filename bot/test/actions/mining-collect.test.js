@@ -1462,3 +1462,120 @@ test('mining.collect: stale ring entries (>60s old) do NOT block', async () => {
   assert.equal(blockedCellDug, true,
     `(1,63,0) should have been dug (stale ring entry): ${JSON.stringify(digOrder)}`);
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Arena replacements: TARGET_IN_WATER, iron drop envelope, tool holding
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.collect: TARGET_IN_WATER when every visible candidate is flooded', async () => {
+  const pos = new Vec3(2, 63, 0);
+  const water = { name: 'water', boundingBox: 'block', getProperties: () => ({}) };
+  const stone = { name: 'stone', boundingBox: 'block', getProperties: () => ({}), hardness: 1.5, type: 1 };
+  const bot = makeStubBot({
+    position: new Vec3(0.5, 64, 0.5),
+    inventoryItems: [{ name: 'iron_pickaxe', count: 1 }],
+  });
+  bot.tool = {
+    itemInHand: () => ({ name: 'iron_pickaxe' }),
+    getDigTime: () => 5,
+    equipForBlock: async () => {},
+  };
+  bot.blockAt = (p) => {
+    const { x, y, z } = p;
+    if (x === 2 && y === 63 && z === 0) return { ...stone, position: p };
+    const floodedNeighbors = [
+      [2, 62, 0], [2, 64, 0], [3, 63, 0], [1, 63, 0], [2, 63, 1], [2, 63, -1],
+    ];
+    if (floodedNeighbors.some(([nx, ny, nz]) => nx === x && ny === y && nz === z)) {
+      return { ...water, position: p };
+    }
+    return { name: 'air', boundingBox: 'empty', position: p };
+  };
+  const deps = makeDeps({
+    bot,
+    findVisible: async (name) => (name === 'stone' ? [{ position: pos }] : []),
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'stone', count: 1 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'TARGET_IN_WATER');
+});
+
+test('mining.collect: success envelope names expected_drop_item raw_iron for iron_ore', async () => {
+  const orePos = new Vec3(1, 63, 0);
+  let inv = [{ name: 'iron_pickaxe', count: 1 }];
+  const bot = makeStubBot({
+    position: new Vec3(0.5, 64, 0.5),
+    inventoryItems: inv,
+  });
+  bot.blockAt = (p) => {
+    if (p.x === 1 && p.y === 63 && p.z === 0) {
+      return {
+        name: 'iron_ore', position: p, boundingBox: 'block', hardness: 3, type: 50,
+        getProperties: () => ({}),
+      };
+    }
+    if (p.y >= 64) return { name: 'air', boundingBox: 'empty', position: p };
+    return { name: 'stone', boundingBox: 'block', position: p };
+  };
+  bot.tool = {
+    itemInHand: () => ({ name: 'iron_pickaxe' }),
+    getDigTime: () => 5,
+    equipForBlock: async () => {},
+  };
+  bot.findBlocks = ({ matching }) => {
+    if (matching === 50 || matching === bot.mcData?.blocksByName?.iron_ore?.id) {
+      return [orePos];
+    }
+    return [];
+  };
+  bot.dig = async () => { inv.push({ name: 'raw_iron', count: 1 }); bot.inventory = { items: () => inv.slice() }; };
+  const deps = makeDeps({
+    bot,
+    hasLineOfSight: () => true,
+    eyePosition: () => new Vec3(0.5, 65.6, 0.5),
+    findVisible: async (name) => (name === 'iron_ore' ? [{ position: orePos }] : []),
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'iron_ore', count: 1 });
+  assert.equal(r.ok, true);
+  assert.equal(r.data.expected_drop_item, 'raw_iron');
+  assert.ok((r.data.drop_item_gained ?? 0) >= 1 || (r.data.total_inventory_gain ?? 0) >= 1);
+});
+
+test('mining.collect: equips shovel for dirt when pickaxe was held (tool switch)', async () => {
+  let held = { name: 'iron_pickaxe' };
+  const dirtPos = new Vec3(1, 63, 0);
+  const inv = [{ name: 'iron_pickaxe', count: 1 }, { name: 'iron_shovel', count: 1 }];
+  const bot = makeStubBot({
+    position: new Vec3(0.5, 64, 0.5),
+    inventoryItems: inv,
+  });
+  bot.blockAt = (p) => {
+    if (p.x === 1 && p.y === 63 && p.z === 0) {
+      return { name: 'dirt', position: p, boundingBox: 'block', hardness: 0.5, type: 3, getProperties: () => ({}) };
+    }
+    return { name: 'air', boundingBox: 'empty', position: p };
+  };
+  bot.tool = {
+    itemInHand: () => held,
+    getDigTime: (_b, h) => (/shovel/.test(h?.name || '') ? 5 : 7500),
+    equipForBlock: async (block) => {
+      if (block.name === 'dirt') held = { name: 'iron_shovel' };
+      if (block.name === 'stone') held = { name: 'iron_pickaxe' };
+    },
+  };
+  bot.dig = async (block) => {
+    if (block.position.x === 1) inv.push({ name: 'dirt', count: 1 });
+  };
+  const deps = makeDeps({
+    bot,
+    hasLineOfSight: () => true,
+    eyePosition: () => new Vec3(0.5, 65.6, 0.5),
+    findVisible: async (name) => (name === 'dirt' ? [{ position: dirtPos }] : []),
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'dirt', count: 1 });
+  assert.equal(r.ok, true);
+  assert.equal(held.name, 'iron_shovel');
+});

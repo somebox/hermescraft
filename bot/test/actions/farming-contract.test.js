@@ -76,3 +76,26 @@ test('farming.harvest: nothing to harvest → NOTHING_TO_HARVEST', async () => {
   const r = await actions.harvest({ x1: 0, z1: 0, x2: 0, z2: 0, y: 64 });
   assertFailure(r, { code: 'NOTHING_TO_HARVEST', retrySafe: false });
 });
+
+test('farming.farm_status: categorizes harvestable wheat and till hint', async () => {
+  const blockAt = (p) => {
+    const { x, y, z } = p;
+    if (y === 63 && x >= 0 && x <= 1 && z >= 0 && z <= 1) {
+      return { name: 'farmland', boundingBox: 'block', getProperties: () => ({ moisture: 7 }) };
+    }
+    if (y === 64 && x === 0 && z === 0) {
+      return { name: 'wheat', boundingBox: 'block', getProperties: () => ({ age: 7 }) };
+    }
+    if (y === 64 && x === 1 && z === 0) {
+      return { name: 'wheat', boundingBox: 'block', getProperties: () => ({ age: 3 }) };
+    }
+    return { name: 'air', boundingBox: 'empty' };
+  };
+  const bot = baseBot(blockAt);
+  const actions = createFarmingActions(farmingDeps(bot));
+  const r = await actions.farm_status({ x1: 0, z1: 0, x2: 1, z2: 1, y: 63 });
+  assert.equal(r.ok, true);
+  assert.equal(r.data.counts.harvestable, 1);
+  assert.equal(r.data.counts.planted_growing, 1);
+  assert.match(r.next_action_hint || '', /mc harvest/i);
+});

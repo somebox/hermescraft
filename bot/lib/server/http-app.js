@@ -22,8 +22,10 @@ import {
   constructCompletionBlockedReason,
   constructFieldsForTaskContext,
   resolveConstructPlanSnapshot,
+  shouldAutoBeginConstruct,
   tryAutoBeginConstructFromTaskContext,
 } from '../runtime/construct-lifecycle.js';
+import { constructScopingEnabled } from '../runtime/construct-context.js';
 import { gateOrchestratorMcAction } from './middleware/orchestrator-mc-gate.js';
 import { adviseHintsSuppressed } from '../shared/escalation-hint.js';
 
@@ -235,17 +237,31 @@ export function createBotHttpListener(deps) {
           }
         }
         let construct_auto_begin = null;
-        try {
-          construct_auto_begin = await tryAutoBeginConstructFromTaskContext(
-            { ctx, config, ensureBot },
-            ctx.runtime.taskContext,
-            body,
-          );
-        } catch (e) {
-          construct_auto_begin = {
-            ok: false,
-            error: { code: 'CONSTRUCT_AUTO_BEGIN_FAILED', message: String(e?.message || e), retry_safe: true },
-          };
+        const tcRecord = ctx.runtime.taskContext;
+        if (tcRecord.card_kind === 'CONSTRUCT') {
+          if (!constructScopingEnabled()) {
+            construct_auto_begin = {
+              ok: false,
+              error: {
+                code: 'FEATURE_DISABLED',
+                message: 'Construct context is off (set HERMES_CONSTRUCT_CONTEXT=1)',
+                retry_safe: false,
+              },
+            };
+          } else if (shouldAutoBeginConstruct(tcRecord, body)) {
+            try {
+              construct_auto_begin = await tryAutoBeginConstructFromTaskContext(
+                { ctx, config, ensureBot },
+                tcRecord,
+                body,
+              );
+            } catch (e) {
+              construct_auto_begin = {
+                ok: false,
+                error: { code: 'CONSTRUCT_AUTO_BEGIN_FAILED', message: String(e?.message || e), retry_safe: true },
+              };
+            }
+          }
         }
         return respond(res, 200, {
           ok: true,

@@ -68,6 +68,10 @@ docker exec → rcon-cli). No bot needed — this only manipulates the world.
 
 ## Tier 3 — Python functional tests (pytest)
 
+Lean arena (2026-06-24): many contract checks moved to `cd bot && npm test`;
+live MC keeps integration smokes. See [`docs/testing/arena-spatial-audit.md`](../testing/arena-spatial-audit.md)
+and [`docs/archive/test-inventory.md`](../archive/test-inventory.md).
+
 **Quick reference:** [test-arena-quickstart.md](test-arena-quickstart.md) — Tester on `:3004`, `restart-tester.sh`, `landfolk-test` arena. Arena admission/spatial policy: [tests/README.md](../../tests/README.md) § Arena test policy.
 
 `tests/functional/` — pytest modules including `functional/combat/` (9 reactive

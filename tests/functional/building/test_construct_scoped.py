@@ -18,7 +18,14 @@ L1_Y = ANCHOR_Y + 1
 
 
 def _clear_construct_state(bot) -> None:
-    bot.post("/action/construct_end", {}, timeout=10)
+    try:
+        bot.post("/action/stop", {}, timeout=3.0)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        bot.post("/action/construct_end", {}, timeout=10)
+    except Exception:  # noqa: BLE001
+        pass
     req = urllib.request.Request(f"{bot.base}/task-context", method="DELETE")
     try:
         urllib.request.urlopen(req, timeout=10)
@@ -28,15 +35,27 @@ def _clear_construct_state(bot) -> None:
 
 def _stand_at_gap(arena, bot, gap_x: int, gap_z: int) -> None:
     """West of the intentional L1 gap — reachable place stand without crossing the slab."""
-    arena.place_player(
-        bot,
-        gap_x - 1,
-        L1_Y + 1,
-        gap_z,
-        yaw=90,
-        expected_floor_y=L1_Y,
-        expected_floor_block="cobblestone",
-    )
+    x = gap_x - 1
+    z = gap_z
+    foot_y = L1_Y + 1
+    fx, fz = int(x), int(z)
+    if not arena.rcon.block_is(fx, L1_Y, fz, "cobblestone", world=arena.world):
+        raise AssertionError(
+            f"construct stand cell ({fx},{L1_Y},{fz}) is not cobblestone — fix pad layout"
+        )
+    try:
+        bot.post("/action/stop", {}, timeout=3.0)
+    except Exception:  # noqa: BLE001
+        pass
+    arena.teleport_bot(x, foot_y, z, 90, 0)
+    arena.settle_default()
+    # Avoid wait_until_stationary here: large pad fills can leave the bot
+    # settling >2s while /health polls use a short urllib timeout.
+    try:
+        arena.wait_until_stationary(bot, timeout_s=8.0, stable_for_s=0.25)
+    except (AssertionError, TimeoutError):
+        arena.teleport_bot(x, foot_y, z, 90, 0)
+        arena.settle_fast()
 
 
 def _lay_ready_l1_pad(rcon, world: str, x0: int, z0: int, x1: int, z1: int) -> None:
@@ -60,7 +79,8 @@ def construct_arena(functional_world, rcon, arena, config, bot):
         f"execute in {world} run give Tester minecraft:cobblestone 64",
     ])
     _lay_ready_l1_pad(rcon, world, x0, z0, x1, z1)
-    arena.settle_fast()
+    arena.forceload((-1, -1, 1, 1))
+    arena.settle_heavy()
     x0, z0 = ANCHOR_X, ANCHOR_Z
     gap_x, gap_z = x0 + 3, z0 + 3
     _stand_at_gap(arena, bot, gap_x, gap_z)

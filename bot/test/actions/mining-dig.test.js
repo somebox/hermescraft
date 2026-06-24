@@ -243,3 +243,86 @@ test('mining.safe_dig: HAZARD_FALL step-down uses calm harmless wording', async 
   assert.equal(r.error.observed_state.hazard.dropKind, 'step');
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// F54 / F67 arena replacements — SUPPORT_BLOCK, SUBMERGED, LOS pre-dig
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.dig: SUPPORT_BLOCK refuses stone supporting oak_door above', async () => {
+  const blockAtByPos = (pos) => {
+    const { x, y, z } = pos;
+    if (x === 5 && y === 64 && z === 0) {
+      return { name: 'stone', position: pos, boundingBox: 'block', getProperties: () => ({}) };
+    }
+    if (x === 5 && y === 65 && z === 0) {
+      return { name: 'oak_door', position: pos, boundingBox: 'block', getProperties: () => ({}) };
+    }
+    return null;
+  };
+  const bot = makeStubBot({ position: new Vec3(4.3, 64, 0.5), blockAtByPos });
+  bot.blockAt = blockAtByPos;
+  const deps = makeDeps({ bot, hasLineOfSight: () => true, eyePosition: () => new Vec3(4.3, 65.6, 0.5) });
+  const actions = createMiningActions(deps);
+  const r = await actions.dig({ x: 5, y: 64, z: 0 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'SUPPORT_BLOCK');
+  assert.equal(r.error.observed_state.supported_block.name, 'oak_door');
+});
+
+test('mining.dig: SUPPORT_BLOCK refuses block supporting fence_gate above', async () => {
+  const blockAtByPos = (pos) => {
+    const { x, y, z } = pos;
+    if (x === 5 && y === 64 && z === 0) {
+      return { name: 'cobblestone', position: pos, boundingBox: 'block', getProperties: () => ({}) };
+    }
+    if (x === 5 && y === 65 && z === 0) {
+      return { name: 'oak_fence_gate', position: pos, boundingBox: 'block', getProperties: () => ({}) };
+    }
+    return null;
+  };
+  const bot = makeStubBot({ position: new Vec3(4.3, 64, 0.5), blockAtByPos });
+  bot.blockAt = blockAtByPos;
+  const deps = makeDeps({ bot, hasLineOfSight: () => true, eyePosition: () => new Vec3(4.3, 65.6, 0.5) });
+  const actions = createMiningActions(deps);
+  const r = await actions.dig({ x: 5, y: 64, z: 0 });
+  assert.equal(r.error.code, 'SUPPORT_BLOCK');
+});
+
+test('mining.dig: SUBMERGED refuses when bot.entity.isInWater (no dig attempted)', async () => {
+  let digCalls = 0;
+  const stoneAt = (pos) => ({
+    name: 'stone',
+    position: pos,
+    boundingBox: 'block',
+    getProperties: () => ({}),
+  });
+  const bot = makeStubBot({ position: new Vec3(0, 64, 0), blockAtByPos: stoneAt, dig: async () => { digCalls++; } });
+  bot.entity.isInWater = true;
+  bot.blockAt = stoneAt;
+  const deps = makeDeps({ bot });
+  const actions = createMiningActions(deps);
+  const r = await actions.dig({ x: 3, y: 64, z: 0 });
+  assert.equal(r.error.code, 'SUBMERGED');
+  assert.equal(digCalls, 0);
+});
+
+test('mining.dig: NO_LINE_OF_SIGHT on first attempt does not call bot.dig', async () => {
+  let digCalls = 0;
+  const stoneAt = (pos) => ({
+    name: 'stone',
+    position: pos,
+    boundingBox: 'block',
+    getProperties: () => ({}),
+  });
+  const bot = makeStubBot({
+    position: new Vec3(0, 64, 0),
+    blockAtByPos: stoneAt,
+    dig: async () => { digCalls++; },
+  });
+  bot.blockAt = stoneAt;
+  const deps = makeDeps({ bot, hasLineOfSight: () => false, eyePosition: () => new Vec3(0, 65.6, 0) });
+  const actions = createMiningActions(deps);
+  const r = await actions.dig({ x: 5, y: 64, z: 0 });
+  assert.equal(r.error.code, 'NO_LINE_OF_SIGHT');
+  assert.equal(digCalls, 0);
+});
+

@@ -301,6 +301,7 @@ export function createFarmingActions(deps) {
             adjusted_target: adjustedTarget ?? undefined,
             requested_coord: { x, y, z },
             floating_surface: floating || undefined,
+            ...(stepOff ? { stepped_off_target: stepOff } : {}),
           },
           next_action_hint: floating
             ? 'mc farm verify_plot … — floating tillable top; fill column below before till.'

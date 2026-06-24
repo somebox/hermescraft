@@ -307,6 +307,35 @@ test('level_ground execute=true calls the level handler with computed target + u
   assert.match(res.result, /executed/);
 });
 
+test('level_ground execute=true second pass places no more than first (rerun idempotent)', async () => {
+  const { terrain } = synthesizeMessyField({
+    minX: 0, maxX: 3, minZ: 0, maxZ: 3, groundY: 64,
+    n_holes: 2, n_pillars: 1, max_pillar_height: 2, seed: 9090,
+  });
+  let levelCalls = 0;
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { regions: null, recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => makeMockBotWithTerrain(terrain),
+    sleep: async () => {},
+    getActions: () => ({
+      async level() {
+        levelCalls += 1;
+        const placed = levelCalls === 1 ? 6 : 0;
+        return { ok: true, data: { dug: 2, placed, skipped: 4, failed: 0 } };
+      },
+    }),
+  });
+  const body = { x1: 0, z1: 0, x2: 3, z2: 3, execute: true, block: 'cobblestone' };
+  const r1 = await part.level_ground(body);
+  const r2 = await part.level_ground(body);
+  assert.equal(r1.ok, true);
+  assert.equal(r2.ok, true);
+  assert.equal(r1.data.execute_result.placed, 6);
+  assert.equal(r2.data.execute_result.placed, 0);
+  assert.ok((r2.data.execute_result.skipped ?? 0) >= 0);
+});
+
 test('level_ground: accepts surface_y as input (= target + 1)', async () => {
   const { terrain } = synthesizeMessyField({
     minX: 0, maxX: 3, minZ: 0, maxZ: 3, groundY: 64, n_holes: 2, n_pillars: 2, seed: 11,

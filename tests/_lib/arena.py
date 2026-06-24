@@ -139,7 +139,7 @@ class Arena:
         stable_since = None
         last_health = None
         while time.time() < deadline:
-            last_health = bot.get("/health", timeout=2.0)
+            last_health = bot.get("/health", timeout=min(5.0, max(2.0, deadline - time.time())))
             pos = last_health.get("position") or {}
             if last_pos is not None:
                 dx = abs((pos.get("x") or 0) - (last_pos.get("x") or 0))

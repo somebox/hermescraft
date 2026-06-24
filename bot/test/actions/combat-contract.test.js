@@ -180,3 +180,45 @@ test('combat.combo: unknown style → INVALID_ARGS', async () => {
   const r = await combat.combo({ target: 'zombie', style: 'invalid' });
   assertFailure(r, { code: 'INVALID_ARGS', messageIncludes: 'style', retrySafe: false });
 });
+
+test('combat.flee: cow nearby → NO_THREAT (hostile mobs only)', async () => {
+  const cow = {
+    name: 'cow',
+    position: { x: 2, y: 64, z: 0, distanceTo: () => 2 },
+    height: 1.4,
+    isValid: true,
+  };
+  const combat = createCombatActions(combatDeps({ entities: { c1: cow } }));
+  const r = await combat.flee({ distance: 8 });
+  assertFailure(r, { code: 'NO_THREAT', messageIncludes: 'hostile', retrySafe: false });
+});
+
+test('combat.flee: zombie nearby → ok flee envelope', async () => {
+  const zombie = {
+    name: 'zombie',
+    position: {
+      x: 3, y: 64, z: 0,
+      distanceTo: (p) => Math.hypot(p.x - 3, p.y - 64, p.z),
+    },
+    height: 1.8,
+    isValid: true,
+  };
+  const bot = {
+    entity: {
+      position: {
+        x: 0, y: 64, z: 0,
+        distanceTo: (p) => Math.hypot(p.x, p.y - 64, p.z),
+      },
+    },
+    entities: { z1: zombie },
+    inventory: { items: () => [] },
+    health: 20,
+    pathfinder: { goto: async () => {}, setGoal: () => {} },
+  };
+  const combat = createCombatActions(combatDeps({ bot, entities: { z1: zombie } }));
+  const r = await combat.flee({ distance: 6 });
+  assertContract(r);
+  assert.equal(r.ok, true);
+  assert.match(r.result, /Fled/i);
+  assert.equal(r.data.flee_reason, 'hostile_mob:zombie');
+});

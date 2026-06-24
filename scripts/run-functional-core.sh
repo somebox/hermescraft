@@ -3,5 +3,5 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-"$ROOT/scripts/restart-tester.sh"
+HERMES_CONSTRUCT_CONTEXT=1 "$ROOT/scripts/restart-tester.sh"
 .venv/bin/pytest -m "functional_core" --durations=15 -q --tb=short "$@"

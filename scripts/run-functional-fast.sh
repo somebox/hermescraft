@@ -4,7 +4,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-# Verified fresh restart (reaps :3004 orphans + asserts the new bot is live on
-# current code) so the suite never runs against stale code.
-"$ROOT/scripts/restart-tester.sh"
+# Construct canary tests require HERMES_CONSTRUCT_CONTEXT on the Tester process
+# (see docs/architecture/construct-canary.md).
+HERMES_CONSTRUCT_CONTEXT=1 "$ROOT/scripts/restart-tester.sh"
 .venv/bin/pytest -m "functional and not slow and not integration and not colony" --durations=15 -q --tb=short "$@"

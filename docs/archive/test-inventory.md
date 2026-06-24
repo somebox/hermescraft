@@ -9,15 +9,15 @@ Each suspected overlap and gap below was validated by reading the
 actual source files (not just filename heuristics) — see "Validation
 notes" at the end of each section.
 
-**Last verified:** 2026-06-14 (arena remediation — harness reset, LOS stance, prune overlap)
+**Last verified:** 2026-06-24 (lean arena refactor — Node replacement-first cuts, door matrix 48→8, spatial pads)
 
-**Arena policy (2026-06):** See [`tests/README.md`](../../tests/README.md) § Arena test policy. **~190** functional pytest cases (run `pytest tests/functional --collect-only -q`). **LOS stance:** chest/interact/through succeed via re-stancing, not `NO_LINE_OF_SIGHT`. **Runners:** `restart-tester.sh` + `run-functional-{core,fast,full}.sh`.
+**Arena policy (2026-06):** See [`tests/README.md`](../../tests/README.md) § Arena test policy and [`docs/testing/arena-spatial-audit.md`](../testing/arena-spatial-audit.md). Post-lean **~170** functional pytest cases (run `pytest tests/functional --collect-only -q` in your venv). **Observation zone:** default `ARENA_MEDIUM` ±16 XZ; spectator `(0, 72, 0)`. **Whisper routing:** kept as lean arena (`test_whisper_as_mention.py`) — HTTP contract not duplicated in Node. **Construct canary:** [`docs/testing/construct-canary-policy.md`](../testing/construct-canary-policy.md). **Nav parity:** [`docs/testing/nav-parity-audit.md`](../testing/nav-parity-audit.md). **Runners:** `restart-tester.sh` + `run-functional-{core,fast,full}.sh`.
 
 **xfail registry (exit criteria):**
 
 | Module | Reason | Exit when |
 |--------|--------|-----------|
-| `test_door_pathfind` (4× N/S closed) | pathfinder door flake | upstream fix or delete param |
+| `test_door_pathfind` | (removed — was N/S xfail grid) | lean E/W 8-case smoke |
 | `test_recovery_protocols` R2 e2e | slow-dig guard | excavation fix |
 | `test_pillar_thick_ceiling` capture | drop timing race | capture path stable |
 | `test_strip_flatten` | strip algorithm | mining strip fix |
@@ -25,7 +25,7 @@ notes" at the end of each section.
 
 **Removed functional modules (Tier 1 or duplicate):** `test_smoke`, `test_inspect`, `test_inventory_advisories`, `test_till_grass_to_farmland`, `test_stair_to_endpoint`, 3× `test_water_navigation` (kept F15 shallow-water only).
 
-**Node Tier 1:** superseded for layout and mc-command coverage by [`bot/test/README.md`](../../bot/test/README.md) and [`docs/reference/audits/bot-test-coverage-2026-06-06.md`](../reference/audits/bot-test-coverage-2026-06-06.md) (regenerate via `node scripts/bot-test-coverage-report.mjs`).
+**Node Tier 1:** [`bot/test/README.md`](../../bot/test/README.md) and [`docs/reference/audits/bot-test-coverage-2026-06-24.md`](../reference/audits/bot-test-coverage-2026-06-24.md) (regenerate via `node scripts/bot-test-coverage-report.mjs`).
 **Verification baseline:** 113 Node unit tests + 15 pytest unit tests + 127 pytest
 functional tests green against the **Tester bot at :3004** (Phase G: all
 functional tests standardized on Tester; Flint role kept available via

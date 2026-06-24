@@ -53,7 +53,7 @@ After the autouse `_functional_harness` runs, Tester is in survival at `(0, 65, 
 
 ## Canonical arena
 
-Observer: fly to `(0, 80, 0)` looking down, or `(0, 70, -30)` facing north. Constants and reset helpers: `tests/_lib/functional_fixtures.py` (`ARENA_FEET_Y`, `LAB_CENTER`, `MINING_CENTER`, `reset_ground_arena` is harness-only).
+Observer: fly spectator to **`(0, 72, 0)`** (slow-fall onto the harness plane) or **`(0, 80, 0)`** looking down. **Observation zone** for new lean tests: **`ARENA_MEDIUM`** (±16 in X/Z, y=60–80) — see `arena_medium()` and constants in `tests/_lib/functional_fixtures.py` (`ARENA_SMALL` ±8, `ARENA_MEDIUM` ±16, `ARENA_LARGE` ±30, `ARENA_FEET_Y`, `LAB_CENTER`, `MINING_CENTER` at `(4, 65, 0)`). **Specialty pads:** `PAD_ORIGIN`, `PAD_EAST`, `PAD_SOUTH`, `PAD_WEST` (prefab vault bakes on west pad `PREFAB_BAKE_PAD`). Spatial inventory: [docs/testing/arena-spatial-audit.md](../docs/testing/arena-spatial-audit.md). `reset_ground_arena` is harness-only.
 
 ## Prefabs
 
@@ -67,7 +67,7 @@ Integration tests use the same autouse `_functional_harness` (reset, trace, park
 
 ## Coord validator
 
-`python3 scripts/check-arena-coords.py` — flags coords outside `[-32,32]×[50,80]×[-32,32]`. `--strict` exits 1; `--feet-strict` checks `tp`/`place_player` Y=65. Opt out per line: `# arena-coords: skip`. Collection emits a warning summary when offenders exist.
+`python3 scripts/check-arena-coords.py` — flags coords outside `[-32,32]×[50,80]×[-32,32]`. `--observation-bbox` (default ±16 when the flag is set) tightens X/Z to the lean observation zone; combine with `--strict` to fail CI on offenders. `--feet-strict` checks `tp`/`place_player` Y=65. Opt out per line: `# arena-coords: skip`. Collection emits a warning summary when offenders exist.
 
 ## RCON transport (SSH ControlMaster)
 

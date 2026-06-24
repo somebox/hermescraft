@@ -1,21 +1,11 @@
-"""Door + fence-gate traversal MATRIX: type × facing × hinge × open × method.
+"""Lean door + fence-gate traversal smokes (E/W production paths).
 
-Comprehensive grid (replaces the ad-hoc 10-row version). Builds a sealed
-obsidian box (5×5, 2-tall walls) with a single door/gate on the wall facing the
-bot's travel direction. Bot starts outside; target is inside; the only route is
-through the opening. Tests BOTH crossing methods:
-  - goto_near : /action/goto_near — bot opens + walks via mineflayer-pathfinder
-  - through   : /action/through  — explicit open + direct-walk + jump-nudge (robust)
+Production build spec mandates **E/W** door facing; combinatorics live in
+`bot/test/actions/move-door-*.test.js` and `interaction-contract.test.js`.
+This module keeps **8** live cases: closed oak door and fence gate on west and
+east, each via `goto_near` and `through`.
 
-Scope: oak_door + oak_fence_gate; facings N/S/E/W; both hinges (doors); open +
-closed; approached from both sides (the 4 directions cover both sides of each axis).
-
-This grid is the regression guard. **E/W doors + ALL fence gates (every facing)
-are guaranteed** and hard-asserted. **N/S-facing DOORS are a known framework
-limitation** (mineflayer-pathfinder N/S race + a `through` direct-walk wedge on
-south-facing closed->opened doors) and are `xfail(strict=False)` — see
-`_ns_door_xfail` / `_NS_LIMIT`. The build/shelter spec mandates E/W door facing;
-shelter egress through the E/W door is covered by test_shelter_egress.py.
+Spatial need: door_sealed_box. Specialty pad: Origin. Observer: (0, 72, 0).
 """
 
 from __future__ import annotations
@@ -81,43 +71,21 @@ def _in_box(pos: dict) -> bool:
     return 3 < pos.get("x", -99) < 7.5 and -2 < pos.get("z", -99) < 2 and pos.get("y", 0) >= 65
 
 
-# N/S-facing DOOR traversal is a known framework limitation (mineflayer-pathfinder
-# + door swing/collision has a north/south handedness): pathfinder crossing of
-# N/S doors races, and the `through` direct-walk wedges on a south-facing
-# closed->opened door. E/W doors and ALL fence gates are 100% reliable, so the
-# build/shelter spec mandates E/W door facing. These cells are xfail(strict=False)
-# — they may xpass on a lucky run; the guarantee is E/W + gates.
-_NS_LIMIT = ("N/S-facing door framework limitation (pathfinder N/S race / through "
-             "south-wedge). Spec mandates E/W doors — those + all gates are reliable.")
-
-
-def _ns_door_xfail(block_type, direction, door_open, method):
-    if block_type != "oak_door":
-        return False                       # gates: all facings reliable
-    if method == "goto_near" and direction == "north":
-        return True                        # pathfinder north: open+closed both flaky
-    if method == "goto_near" and direction == "south" and not door_open:
-        return True                        # pathfinder south-closed: flaky
-    if method == "through" and direction == "south" and not door_open:
-        return True                        # through direct-walk wedges south-closed
-    return False
-
-
 def _matrix_params():
+    """E/W closed-door smokes only (was 48-case full matrix)."""
     params = []
-    for direction in ("west", "east", "north", "south"):
-        for door_open in (False, True):
-            for method in ("goto_near", "through"):
-                state = "open" if door_open else "closed"
-                rows = [("oak_door", h) for h in ("left", "right")] + [("oak_fence_gate", "left")]
-                for block_type, hinge in rows:
-                    label = ("door" if block_type == "oak_door" else "gate")
-                    cid = (f"door-{direction}-{hinge}-{state}-{method}" if label == "door"
-                           else f"gate-{direction}-{state}-{method}")
-                    marks = (pytest.mark.xfail(strict=False, reason=_NS_LIMIT),) \
-                        if _ns_door_xfail(block_type, direction, door_open, method) else ()
-                    params.append(pytest.param(
-                        block_type, direction, hinge, door_open, method, id=cid, marks=marks))
+    for direction in ("west", "east"):
+        for method in ("goto_near", "through"):
+            params.append(pytest.param(
+                "oak_door", direction, "left", False, method,
+                id=f"door-{direction}-closed-{method}",
+                marks=(pytest.mark.functional_core,) if method == "through" and direction == "west" else (),
+            ))
+        for method in ("goto_near", "through"):
+            params.append(pytest.param(
+                "oak_fence_gate", direction, "left", False, method,
+                id=f"gate-{direction}-closed-{method}",
+            ))
     return params
 
 
@@ -137,9 +105,11 @@ def door_arena(rcon, arena, tester_bot, config):
     ])
     arena.settle_fast()
     yield
+    from tests._lib.functional_fixtures import ensure_arena_forceload
+
     rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run fill -16 60 -16 16 80 16 minecraft:air")
-    arena.forceload_remove_all()
+    ensure_arena_forceload(rcon, world)
 
 
 @pytest.mark.functional

@@ -1,7 +1,7 @@
 """Two-leg stair-down with a 90° turn between legs.
 
-Arena: canonical ground in the mining zone (east half). Stairs dig down
-through dirt and stone substrate — no floating cube.
+Arena: canonical ground at `MINING_CENTER` (origin-adjacent east pad). Stairs dig
+down through dirt and stone substrate — no floating cube.
 """
 
 from __future__ import annotations

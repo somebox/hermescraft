@@ -29,7 +29,9 @@ Created with:
 
 Spawn platform at (0, 64, 0): an **extended 16×11 stone surface** at Y=64 covering x=−5..10, z=−5..5. Bots stand at Y=65. Bedrock floor at Y=−64.
 
-**Pytest functional suite (2026-05-23):** the autouse harness rebuilds a **65×65 canonical arena** centered on origin before each test: grass y=64, dirt y=60–63, stone y=50–59 (session substrate), air y=65–80. Tester parks at `(0, 65, 0)` after rescue. Observer fly-to: `(0, 80, 0)` or `(0, 70, -30)`. Details: [tests/README.md](../../tests/README.md).
+**Pytest functional suite (2026-05-23):** the autouse harness rebuilds a **65×65 canonical arena** centered on origin before each test: grass y=64, dirt y=60–63, stone y=50–59 (session substrate), air y=65–80. Tester parks at `(0, 65, 0)` after rescue.
+
+**Lean observation zone (2026-06):** prefer geometry inside **`ARENA_MEDIUM`** (±16, X/Z) so a single fly spectator at **`(0, 72, 0)`** sees the whole case. Specialty pads — **`PAD_ORIGIN`** (±8 door/LOS smokes), **`PAD_EAST`** (mining / stair cubes anchored at `MINING_CENTER` `(4, 65, 0)`), **`PAD_SOUTH`**, **`PAD_WEST`** (lab + session prefab vault on `PREFAB_BAKE_PAD` x=−12..−4). Full module map: [docs/testing/arena-spatial-audit.md](../testing/arena-spatial-audit.md). Details: [tests/README.md](../../tests/README.md).
 
 **Legacy safe-home `(52, 65, 52)`:** Tier-2 YAML fixtures (including agent-driven L3 combat not yet ported to pytest) still teleport Tester to `(52, 65, 52)` on cleanup. The canonical pytest park is `(0, 65, 0)`.
 

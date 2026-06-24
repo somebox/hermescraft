@@ -93,3 +93,35 @@ test('resolveRetraceTrail: use_trail falls back to stair_down', () => {
   assert.equal(trail.source, 'stair_down');
   assert.equal(trail.fallback, true);
 });
+
+test('retrace handler: no trail → RETRACE_NO_TRAIL', async () => {
+  const { createRetrace } = await import('../../lib/actions/movement/retrace.js');
+  const retrace = createRetrace({
+    ctx: { runtime: {} },
+    ensureBot: () => ({ entity: { position: { x: 0, y: 64, z: 0 } }, blockAt: () => ({ name: 'air' }) }),
+    posObj: () => ({ x: 0, y: 64, z: 0 }),
+    fmt: String,
+    loadLocations: () => ({}),
+    ACTIONS: {},
+    sleep: () => Promise.resolve(),
+  });
+  const r = await retrace({});
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'RETRACE_NO_TRAIL');
+});
+
+test('retrace handler: use_trail with empty crumbs → RETRACE_NO_TRAIL (nav_trail)', async () => {
+  const { createRetrace } = await import('../../lib/actions/movement/retrace.js');
+  const retrace = createRetrace({
+    ctx: { runtime: { navTrail: { crumbs: [] } } },
+    ensureBot: () => ({ entity: { position: { x: 0, y: 64, z: 0 } }, blockAt: () => ({ name: 'air' }) }),
+    posObj: () => ({ x: 0, y: 64, z: 0 }),
+    fmt: String,
+    loadLocations: () => ({}),
+    ACTIONS: {},
+    sleep: () => Promise.resolve(),
+  });
+  const r = await retrace({ use_trail: true });
+  assert.equal(r.error.code, 'RETRACE_NO_TRAIL');
+  assert.match(r.error.message, /nav-trail crumbs/i);
+});
