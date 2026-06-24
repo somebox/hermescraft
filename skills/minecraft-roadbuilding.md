@@ -32,7 +32,7 @@ aesthetics third.
 | **Width** | **3 blocks** most of the way | Tighter only across tunnels/bridges where structure dictates |
 | **Surface** | Cleared and **flat** within each segment | Allow ±1 Y across a transition between segments if grade is unavoidable |
 | **Grade** | **Gradual** rises — prefer a long shallow ramp over a wall | Tight squeezes through ravines |
-| **Surface block** | **Dirt** by default; available materials when dirt isn't on hand | Use **cobblestone** for bridges, tunnel floors, anything load-bearing or water-adjacent |
+| **Surface block** | **Local tier-1 full blocks** (see Material selection) — usually dirt or sand | **Cobblestone** (or local stone) for bridges, tunnel floors, load-bearing / water-adjacent spans; **not** wood |
 | **Surface consistency** | One material per visible stretch | A clean material handover at a structural seam (bridge ends, tunnel mouths) is fine |
 | **Vertical clearance** | ≥ **3 blocks** of air above the road surface | Never below 3 — even a 2-tall ceiling clips agent navigation |
 | **Tree removal** | **All** wood blocks removed | None — floating leaves with no log under them are a tell of a sloppy clear |
@@ -282,7 +282,7 @@ adjacent solid block, *then* dig the pillar from the side.
    - When in doubt: emit a [SURVEY] note describing the obstacle and ask the orchestrator to split the segment.
 
 3. **Clear trees and obstacles.**
-   - For each tree on the corridor: `mc clear_strip X1 Z1 X2 Z2 y=Y road_mode=true` clears wood + leaves + above-bed blocks in one auto-batched call (Y = the bed's block_y, same value as level_ground's target=). The `road_mode` flag treats wood as diggable (default level/level_ground preserves it).
+   - For each tree on the corridor: `mc clear_strip X1 Z1 X2 Z2 y=Y road_mode=true` clears wood + leaves + above-bed blocks in one auto-batched call (Y = the bed's block_y, same value as level_ground's target=). The `road_mode` flag treats wood as diggable (default level/level_ground preserves it). Batches dig **layer-down in row sweeps** (not random hops). If a call hits the wallclock cap, **re-run the same command** — partial responses include `cursor` / `plan_hash` in `observed_state` (see [`docs/architecture/execution-kernel.md`](../docs/architecture/execution-kernel.md)).
    - For tall grass/flowers in the path: `mc clear_strip` already covers Y..Y+height above the surface.
 
 4. **Shape the bed.** Only run this on segments whose dispositions cleared step 2.
@@ -320,7 +320,7 @@ When terrain rises **>4 blocks** above the road's target Y for a stretch >8 bloc
 1. `mc terrain_top` the corridor — find where block_y exceeds target_y + 4.
 2. `mc tunnel <dir> <length>` from the segment start. Default cross-section is 1×2 — too small for a road.
 3. Widen: `mc fill air X1 Y Z1 X2 Y+2 Z2` to clear a **3×3 cross-section** (3 wide, 3 tall vertical clearance).
-4. Floor: `mc fill cobblestone X1 Y-1 Z1 X2 Y-1 Z2`. Stone or cobble underfoot — never dirt in a tunnel; it crumbles aesthetically and roots into the wall material.
+4. Floor: `mc fill cobblestone X1 Y-1 Z1 X2 Y-1 Z2` (or another **stone-group** block from Material selection). Stone or cobble underfoot — never dirt in a tunnel; it crumbles aesthetically and roots into the wall material.
 5. Mouth: leave the entry/exit 1 segment-width wider than the tunnel itself — a sudden 1×3 hole in a hillside reads as a mineshaft, not a road.
 
 ## Bridges (over water, ravines, deep dips)
@@ -343,7 +343,8 @@ Triggered by step 1's disposition map — when `summary.deck_required_n > 0` or 
    - **Dry-run first** on large spans to see `would_place` vs `unanchored` counts before committing the placements.
    - **Supports** (for spans >5 blocks): place piers with `mc fill cobblestone X Y-N Z X Y Z` every 4-6 blocks, depth N down to solid ground. The piers act as anchor seeds for `mc deck` to BFS off of.
    - **Parapets** (safety): `mc wall cobblestone X1 Y+1 Z1 X1 Y+1 Z2` on each long edge.
-   - **Material consistency:** cobblestone for the whole bridge stretch; the dirt road resumes on the far side.
+   - **Material consistency:** full **cobblestone** (or slab exception below) for the deck; bank approaches and parapets stay **full** cobblestone; the overland surface material resumes on the far side.
+   - **Slab deck (supply exception only):** default `block=cobblestone`. If dry_run `would_place` ≥ **48** cells and inventory cobble is **less than** that count but enough for a stonecutter pass (~half the cells), you may craft **`cobblestone_slab`** and run `block=cobblestone_slab`. Keep parapets and the first/last deck row full cobble for anchoring. Run `mc reachable` on both banks before handoff; if either fails, redo with full blocks.
 
 4. **Defer** — when the deck cap (256 cells per call) is exceeded or `unanchored.length > 0` even after manual pier placement: emit a `[DEFER]` card noting `dip_spans` coords + `suggestion='deck'` and stop. The orchestrator can route a multi-segment bridge plan in a follow-up.
 
@@ -398,31 +399,64 @@ read-only except level_ground). Don't skip — a segment that "looks right"
 but fails verify_plot is the same class of bug as the wheat trial-3
 script that returned the right shape from the wrong source.
 
-## Material selection by biome
+## Material selection (local availability)
 
-The default road bed is **dirt** — cheap, abundant, fast to place. But in biomes where the world process keeps modifying exposed dirt, the road looks wrong minutes after the trial completes.
+Road surfaces are **full blocks only** (no slab pavement on ordinary grade, cut, or fill segments). Pick material from what the corridor already offers and what the bot carries — do not default to hauling cobble across a desert or dirt through a snowy pass.
 
-| Biome | Use | Why |
+**Pick order (first match wins):**
+
+1. **Structural / stability** — decks, tunnel floors, water-adjacent spans, snowy/swamp regen biomes → stone group (below). Decks default to **`cobblestone`**; see slab exception in Bridges.
+2. **Biome table** — primary surface for the visible overland stretch.
+3. **Inventory + spoil** — `mc status` before a long segment; use blocks from the **same substitution group** as the biome choice. Cuts and digs along the corridor count first (fill with your own spoil before spending carried blocks).
+4. **Card SUPPLY** — if the card lists materials or a chest anchor, `mc withdraw` / `mc deposit` to rebalance before `execute=true`.
+
+**Never** use logs, planks, or wood slabs for a road bed (fire, wrong tier, preserved as structure in non-`road_mode` clears). Gravel is a last-resort filler when sand/cobble/dirt are absent.
+
+### Biome primary surface (full blocks)
+
+| Biome / terrain | Prefer | Why |
 |---|---|---|
-| Plains, forest, desert, savanna | `dirt` (default) | No grass spread issues outside snowy/swamp; surface stays consistent. |
-| **Snowy taiga, snowy plains, ice spikes** | `cobblestone` (or `stone`) | Snowfall accumulates `snow_layer` on dirt within a few minutes (looks like +1 block bumps). Grass also spreads to exposed dirt over time. Cobblestone is biome-stable. |
-| **Swamp, mangrove swamp** | `cobblestone` | Grass spread + water pooling on dirt. Cobblestone keeps the surface clean and walkable. |
-| Mushroom fields, the End, nether | `cobblestone` or `stone_bricks` | Default dirt looks alien against the biome palette. Cobblestone reads as "built" rather than "grown." |
+| Plains, forest, taiga (non-snowy), savanna, jungle | `dirt` | Matches ground; grass spread is acceptable outside snowy/swamp. |
+| **Desert, beach** | `sand` | Abundant on the surface; reads native; no grass spread. |
+| **Badlands / mesa** | `red_sand` | Same as desert; use `sand` only if red_sand is unavailable. |
+| **Stony peaks, windswept hills, underground / rocky cuts** | `cobblestone`, `stone`, or `deepslate` / `cobbled_deepslate` | Use what the cut exposes — do not import dirt. |
+| **Snowy taiga, snowy plains, ice spikes** | `cobblestone` or `stone` | Snow layers on dirt within minutes (W2-NAV-020); grass spreads to exposed dirt. |
+| **Swamp, mangrove swamp** | `cobblestone` | Grass + pooling on dirt. |
+| Mushroom fields, the End, nether | `cobblestone` or `stone_bricks` | Dirt looks alien; use built stone. |
 
-Pass the material via the `block=` arg on the road verbs:
+### Substitution groups (stay in one group per visible stretch)
+
+| Group | Blocks (first in inventory wins) |
+|---|---|
+| **Soil** | `dirt`, `coarse_dirt`, `grass_block` (from dig spoil) |
+| **Sand** | `sand`, `red_sand` |
+| **Stone** | `cobblestone`, `stone`, `andesite`, `diorite`, `granite`, `deepslate`, `cobbled_deepslate`, `tuff`, `blackstone` |
+
+Handover at bridge/tunnel mouths: stone-group deck/tunnel meets soil/sand overland is the normal seam.
+
+Pass the chosen material on road verbs:
 
 ```
-mc clear_strip X1 Z1 X2 Z2 y=TARGET_Y road_mode=true block=cobblestone
-mc level_ground X1 Z1 X2 Z2 target=TARGET_Y execute=true block=cobblestone
+mc clear_strip X1 Z1 X2 Z2 y=TARGET_Y road_mode=true block=sand
+mc level_ground X1 Z1 X2 Z2 target=TARGET_Y execute=true block=sand
+mc verify region_blocks X1 TARGET_Y Z1 X2 TARGET_Y Z2 sand 45
 ```
 
-When the measure card classifies a segment as `passage=deck`, the deck verb ALWAYS uses cobblestone regardless of biome (bridges over water/lava are visually + structurally load-bearing).
+Use the **same** `block=` name in verify that you used in `level_ground`.
 
-This is the W2-NAV-020 fix from `data/postmortems/proc-nav-lab/proc-nav-1780994801/postmortem.md` — the prior trial's dirt road in snowy taiga had `snow_layer` accumulate on top within ~10 min, producing the `±1 block surface variation` the operator observed.
+### Long segments and supply math
+
+- Estimate cells from dry-run: `columns_n × width` for `level_ground`, or `would_place` for `mc deck`.
+- **Overland:** prefer biome primary + spoil; only `mc withdraw` when cuts cannot cover `fill_*` dispositions.
+- **Slabs:** skip for grade work. Allowed only when (a) a **large deck** (`would_place` ≥ 48) or (b) a card/body estimates **≥ ~96** remaining **surface** placements in stone-group biomes and cobble count is between **half and full** need — then stonecutter (`1 cobble → 2 cobblestone_slab`) and `block=cobblestone_slab` on the deck or one resurface pass. Test `mc reachable` on ends; revert to full blocks if handoff fails.
+
+`passage=deck` spans over water/lava are always stone-group; default **`cobblestone`** full blocks unless the slab exception above applies.
+
+Snowy-taiga dirt roads failing verify with `snow_layer` bumps are the W2-NAV-020 lesson — stability overrides cheap dirt when the biome table says stone.
 
 ## Doctrine summary
 
-- **3 wide. Flat. Dirt by default, cobblestone in snowy/swamp/regen-active biomes. Cobble for bridges & tunnels.**
+- **3 wide. Flat. Full-block surface from local/biome table (dirt, sand, or stone group). Cobble/stone for bridges, tunnels, snowy/swamp. Slabs only on large decks or tight cobble supply (see Material selection). No wood pavement.**
 - **Gradual over steep.** A long ramp reads as a road; a wall reads as a building.
 - **All wood blocks gone.** Floating leaves = unfinished. `mc clear_strip road_mode=true` auto-cleans the canopy connected to any trunk it touches; you usually don't need a separate `mc fell_tree` pass.
 - **3-block vertical clearance.** Always.
