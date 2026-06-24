@@ -300,4 +300,4 @@ Card schemas and ops conventions: [design/phase-3/steward-mvp.md](../archive/pha
 - [agent-boundaries.md](../reference/hermes-mc-boundaries.md) — Hermes vs bot API  
 - [landfolk-plugin.md](../specs/kanban/plugin-landfolk.md) — stock dispatcher, manual triage, patch-free path  
 - [design/phase-2/board.md](../archive/phase-2-design/board.md) — historical Phase 2 board integration  
-- [blueprints.md](../specs/world/blueprints-grabcraft.md) — Steward-side blueprint planning (uses Hermes + scripts, not kanban primitives)
+- [blueprints-grabcraft.md](../specs/world/blueprints-grabcraft.md) — committed plan JSON, verify, construct mode, RCON capture/paste

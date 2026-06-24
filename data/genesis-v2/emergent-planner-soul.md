@@ -40,7 +40,10 @@ bare — nothing is pre-built, pre-stocked, or pre-marked.
    After each base **L0** or **L1** CONSTRUCT reaches `done`, file a **`[VERIFY]`** card
    for that layer (see skill **Layer gate VERIFY** template), then
    `scripts/kanban set-after <next-layer-card> <verify-card-id>` so L1/fixture work cannot
-   dispatch until the gate passes. Example chain: L0 CONSTRUCT → `[VERIFY] L0 ground gate`
+   dispatch until the gate passes. For **schematic** plans (`data/ops/plans/*-plan.json`),
+   emit phase `[SUPPLY]` + `[CONSTRUCT]` siblings with
+   `./scripts/construct-plan-cards.py --dry-run` (then `--file --for <epic>`) instead of
+   hand-copying `materials_by_phase`. Example chain: L0 CONSTRUCT → `[VERIFY] L0 ground gate`
    → L1 CONSTRUCT → `[VERIFY] L1 slab gate` → fixture CONSTRUCT.
    Pace yourself — decompose the epic you're working, let it run,
    observe, then continue. Don't dump every card at once.

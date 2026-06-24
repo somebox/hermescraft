@@ -219,10 +219,10 @@
       "evidence": [
         "gv2-2026-06-22-2: gv2_invalid=3 after planner templates; no retro phase before poller cap capture -> retro_done 0/0, compare_safe still true.",
         "gv2-2026-06-22-1/-2: outdoor chest-before-slab base CONSTRUCT pattern; base_viability now gates scorecard shell but invalid cards still reached workers.",
-        "Plan: base preflight experiment (card-gate E1) — distinct from runbook reset checklist E1 (reinit_board). Docs: docs/guides/genesis-v2-runbook.md#card-gate-e1-experiment-base-preflight."
+        "Plan: base preflight experiment (card-gate E1) \u2014 distinct from runbook reset checklist E1 (reinit_board). Docs: docs/guides/genesis-v2-runbook.md#card-gate-e1-experiment-base-preflight."
       ],
-      "candidate_direction": "(1) ensure_retro_phase before capture on poller cap, validate-abort, manual stop; optional cap-time feedback bundle + score. (2) block_invalid_ready_cards after skill-strip with schema-missing: blocks. (3) Pilot-domain base L0/L1 CONSTRUCT validator rules + schema skill template. (4) E1 validation run on same evidence arm: full-status gv2_invalid, retro_count, block rate, base_viability — not compare_safe alone.",
-      "blocked_by": "Operator E1 validation run (e1-run) on evidence arm; create/edit/promote can still race one poller tick. Does not duplicate gv2-verify-layer-l0 (score-time L0 probe — done).",
+      "candidate_direction": "(1) ensure_retro_phase before capture on poller cap, validate-abort, manual stop; optional cap-time feedback bundle + score. (2) block_invalid_ready_cards after skill-strip with schema-missing: blocks. (3) Pilot-domain base L0/L1 CONSTRUCT validator rules + schema skill template. (4) E1 validation run on same evidence arm: full-status gv2_invalid, retro_count, block rate, base_viability \u2014 not compare_safe alone.",
+      "blocked_by": "Operator E1 validation run (e1-run) on evidence arm; create/edit/promote can still race one poller tick. Does not duplicate gv2-verify-layer-l0 (score-time L0 probe \u2014 done).",
       "expected_metrics": {
         "board_quality.gv2_invalid": {
           "max": 0
@@ -231,6 +231,82 @@
       },
       "expected_metrics_note": "compare_safe alone is insufficient for retro proof; operator checklist also requires feedback-bundle retro_count > 0 and/or non-zero retro capture. Shell/establishment lift not required for E1 gate success.",
       "notes": "SELECTED 2026-06-22. Code landed: ensure_retro_phase, block_invalid_ready_cards, pilot base CONSTRUCT rules, cap/validate-abort score bundle. Runbook operator validation subsection defines pass criteria; live operator run (e1-run) still pending."
+    },
+    {
+      "work_id": "gv2-e1-card-gate-result",
+      "status": "validated",
+      "type": "experiment-result",
+      "title": "E1 card-gate VALIDATED on gv2-2026-06-22-5: gv2_invalid=0 via deterministic dispatch gate",
+      "source_run_id": "gv2-2026-06-22-5",
+      "evidence_arm": "standard/mimo-v2.5/emergent/spawn--183,71,-244",
+      "tier": "standard",
+      "evidence": [
+        "board_quality.gv2_invalid=0 (checked 142); 6 poller schema-gate blocks stopped invalid cards before dispatch -> E1 core hypothesis VALIDATED.",
+        "Contamination fixes held: 52/52 cards anchored near -183,-244, 0 stale coords, no tester lease, board purged (1448->0 at reinit).",
+        "Cap auto-retro WORKED (filed 7 vs prior 0/0) but only 3/7 done in 120s CAP_RETRO_WAIT_S -> 4 pending -> compare_safe=FALSE (mechanical, not confound).",
+        "4 ground_gate_FAIL events: in-run L0 acceptance blocked workers building on bad pad.",
+        "base_viability gate WORKS (manual capture: l0_air=24 l0_water=0 -> viable=false -> shell gated, est 3.5->2.5). GOOD SITE eliminated flooding (0 water vs prior 3-8). Base dry+partial, 24 L0 air holes = leveling-completeness gap."
+      ],
+      "notes": "E1 primary win = deterministic gate -> gv2_invalid=0. Two follow-up fixes below; base-build execution (fill 24 L0 air holes) = build_layer."
+    },
+    {
+      "work_id": "gv2-cap-retro-wait",
+      "status": "verified",
+      "type": "infra-fix",
+      "lifts_level": "G1",
+      "title": "Cap retro wait too short (120s) -> 4/7 retros incomplete -> compare_safe=false",
+      "source_run_id": "gv2-2026-06-22-5",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "target_gap": "compare_safe=false because retro_pending=4 at 2h cap (CAP_RETRO_WAIT_S=120 too short for 7 retros while workers busy).",
+      "candidate_direction": "Bump CAP_RETRO_WAIT_S to ~240 (match RETRO_WAIT_DEFAULT_S), OR file retros a few min BEFORE the hard cap so they complete. Mechanical; not a product choice.",
+      "expected_metrics": {
+        "compare.compare_safe": true
+      },
+      "notes": "PROPOSED. The retro FILING fix works (7 filed vs 0); only the WAIT window is short.",
+      "change": {
+        "files": [
+          "scripts/genesis2_lib.py: CAP_RETRO_WAIT_S 120->240 (match stop-path window)"
+        ]
+      },
+      "deterministic_check": "84 tests pass; constant=240. Validate compare_safe=true on next capped run."
+    },
+    {
+      "work_id": "gv2-base-snapshot-capture-reliability",
+      "status": "verified",
+      "type": "infra-fix",
+      "title": "base-snapshot auto-capture returned None at cap (works manually) -> base_viability inert until re-score",
+      "source_run_id": "gv2-2026-06-22-5",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "target_gap": "_capture_base_snapshot returned None during cap pipeline despite rcon up + base_anchor present; manual call OK.",
+      "candidate_direction": "Make _capture_base_snapshot log its failure reason (don't swallow); verify the lazy import + rcon path runs in the poller cap context; consider capturing base-snapshot earlier (not only at teardown).",
+      "expected_metrics": null,
+      "notes": "PROPOSED. Gate logic is correct (validated by manual capture); only the auto-capture timing/robustness needs fixing.",
+      "change": {
+        "files": [
+          "scripts/genesis2_lib.py: _capture_base_snapshot logs failure reason to stderr (->poller.log) on each None path + no-layers guard, instead of swallowing"
+        ]
+      },
+      "deterministic_check": "Gate logic already validated (manual capture). Logging surfaces the transient cap-time cause next run."
+    },
+    {
+      "work_id": "gv2-build-layer",
+      "status": "proposed",
+      "type": "tooling-design",
+      "lifts_level": "G2",
+      "title": "build_layer: deterministic layered base build (Pillar 1) \u2014 owns order/coords/door-gap/hollowness",
+      "source_run_id": "gv2-2026-06-22-5",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "spec_doc": "docs/architecture/base-build-layered.md",
+      "target_gap": "gv2-2026-06-22-5 built an UNUSABLE shelter (blocked door, no entrance, solid interior, partial) from a REASONABLE blueprint \u2014 all execution failures.",
+      "evidence": [
+        "Door rejected 6+ times (Event blockUpdate (-183,72,-241) did not apply): walls filled the doorway, then place oak_door into solid -> no entrance.",
+        "Builder placed blocks at wrong y (crafting tables y48/56/61, far below y71 base) + foot-cell/view-blocked/already-stone errors = coordinate disorientation.",
+        "Interior solid (floor+wall fill+scatter), not hollow; 5 overlapping retry cards for one shelter; built on unleveled dirt (no L0 slab); partial at 2h cap."
+      ],
+      "candidate_direction": "build_layer(origin,footprint,offset,spec) owns coord/y-math; wall ring leaves a DOOR GAP, door placed into gap last; refuse-until-verify_layer; one coherent build. verify_layer gains door-traversable + interior-air gates. See spec doc 'Requirements from gv2-2026-06-22-5'.",
+      "expected_metrics": null,
+      "notes": "PROPOSED. Highest-leverage next build step; blueprint intent is fine, execution is the gap. Depends on verify_layer (done). Validate on same arm >=2 runs."
     }
   ]
 }

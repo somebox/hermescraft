@@ -11,7 +11,7 @@
   "cards_total": 3,
   "retro_done": "1/1",
   "retro_pending": 0,
-  "smoke": "WARN",
+  "smoke": null,
   "exceptions": [
     "gv2_invalid:1"
   ],

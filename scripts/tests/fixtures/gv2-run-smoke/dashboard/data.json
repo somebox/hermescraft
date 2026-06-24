@@ -91,6 +91,10 @@
       },
       "source": "artifacts"
     },
+    "base_viability": {
+      "present": false,
+      "viable": null
+    },
     "board_quality": {
       "gv2_invalid": 1,
       "checked": 3,
@@ -132,8 +136,7 @@
       "scope_coverage_ratio": 1.0,
       "scope_windowed": true,
       "scope_kept": 2
-    },
-    "smoke_status": "WARN"
+    }
   },
   "summary": {
     "loop_goal": "",
@@ -166,7 +169,7 @@
       "cards_total": 3,
       "retro_done": "1/1",
       "retro_pending": 0,
-      "smoke": "WARN",
+      "smoke": null,
       "exceptions": [
         "gv2_invalid:1"
       ],

@@ -16,6 +16,8 @@
 | [`testing/genesis-v2/plan-alignment.md`](testing/genesis-v2/plan-alignment.md) | Plan vs shipped gv2 measurement gaps |
 | [`architecture/stock-truth-model.md`](architecture/stock-truth-model.md) | Stored / reachable / withdrawable stock contract |
 | [`architecture/embodied-control.md`](architecture/embodied-control.md) | Reflex-first interface — registry vs agent surface, delivery order, evidence loop |
+| [`architecture/execution-kernel.md`](architecture/execution-kernel.md) | Bulk `orderCells` / `runCells` motor, partial envelope, port tiers |
+| [`architecture/construct-canary.md`](architecture/construct-canary.md) | Construct mode rollout checks (`HERMES_CONSTRUCT_CONTEXT`); plan shape in [`specs/world/blueprints-grabcraft.md`](specs/world/blueprints-grabcraft.md) |
 | [`architecture/impact.md`](architecture/impact.md) | Code touchpoints for migration |
 | [`architecture/bot-lease.md`](architecture/bot-lease.md) | Runtime bot lease (`mc bot`, genesis v2) |
 | [`architecture/bots-and-mc.md`](architecture/bots-and-mc.md) | Bot registry, fleet names, `mc`, marks, fleet binding |
@@ -81,7 +83,7 @@ These describe the **Steward + roster** fleet until `@planner` / `@dispatcher` l
 
 | Area | Index |
 |------|--------|
-| World / marks / regions | [`specs/world/marks-sign-anchored.md`](specs/world/marks-sign-anchored.md), [`specs/world/designated-regions.md`](specs/world/designated-regions.md), [`specs/world/blueprints-grabcraft.md`](specs/world/blueprints-grabcraft.md) |
+| World / marks / regions | [`specs/world/marks-sign-anchored.md`](specs/world/marks-sign-anchored.md), [`specs/world/designated-regions.md`](specs/world/designated-regions.md), [`specs/world/blueprints-grabcraft.md`](specs/world/blueprints-grabcraft.md) — committed plan JSON (**[Terminology](specs/world/blueprints-grabcraft.md#terminology)**), verify, RCON capture/paste; construct rollout: [`architecture/construct-canary.md`](architecture/construct-canary.md) |
 | MC / nav / kanban / agent | [`specs/`](specs/) — `mc/`, `nav/`, `kanban/`, `dashboard/`, `agent/` (e.g. [`specs/agent/scripting-layer-dsl.md`](specs/agent/scripting-layer-dsl.md)) |
 | Procedural harness | [`testing/procedural/testing-model.md`](testing/procedural/testing-model.md), [`scenario-runs.md`](testing/procedural/scenario-runs.md), [`map-catalog.md`](testing/procedural/map-catalog.md), [`smoke-closure.md`](testing/procedural/smoke-closure.md) |
 | Context tuner | [`testing/context-tuner/README.md`](testing/context-tuner/README.md) — scenarios in [`data/context-tests/`](data/context-tests/) |
