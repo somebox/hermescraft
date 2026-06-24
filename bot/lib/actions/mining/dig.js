@@ -9,7 +9,7 @@ import {
   formatFallHazardMessage,
 } from '../../runtime/dig-tools.js';
 import { OperationTimeoutError, ACTION_CAPS_MS, timeoutError, pathfindGotoNear } from '../_helpers.js';
-import { coord3 } from '../_args.js';
+import { coord3, bool } from '../_args.js';
 import { canSeeBlockFaces } from '../_los.js';
 import { ok, fail } from '../../shared/action-contract.js';
 import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
@@ -578,12 +578,15 @@ export function createDigHandlers(deps) {
   }
 
   function createSafeDig(invokeDig) {
-    return async function safe_dig({ x, y, z, force }) {
+    return async function safe_dig(args) {
+      const c = coord3(args);
+      if (!c.ok) return c.response;
+      const { x, y, z } = c;
       const b = ensureBot();
-      if (![x, y, z].every((v) => Number.isFinite(Number(v)))) {
-        return fail('INVALID_COORD', 'mc safe_dig requires numeric x, y, z', { retry_safe: false });
-      }
-      const tx = Math.floor(Number(x)), ty = Math.floor(Number(y)), tz = Math.floor(Number(z));
+      const tx = Math.floor(x);
+      const ty = Math.floor(y);
+      const tz = Math.floor(z);
+      const force = bool(args?.force, false);
       if (force) return invokeDig({ x: tx, y: ty, z: tz, force: true });
 
       const target = b.blockAt(new Vec3(tx, ty, tz));

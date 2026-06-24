@@ -3,6 +3,7 @@
  */
 
 import { fail } from '../shared/action-contract.js';
+import { normalizeInclusiveBox6 } from './coordinates.js';
 
 export const BULK_MAX_CELLS_PER_CALL = 32;
 
@@ -18,12 +19,8 @@ export const BULK_MAX_CELLS_PER_CALL = 32;
 export function checkBulkVolumeLimit({ opName, total, mutableCount, inConstruct, box }) {
   const max = BULK_MAX_CELLS_PER_CALL;
   const { x1, y1, z1, x2, y2, z2 } = box;
-  const minX = Math.min(x1, x2);
-  const maxX = Math.max(x1, x2);
-  const minY = Math.min(y1, y2);
-  const maxY = Math.max(y1, y2);
-  const minZ = Math.min(z1, z2);
-  const maxZ = Math.max(z1, z2);
+  const norm = normalizeInclusiveBox6({ x1, y1, z1, x2, y2, z2 });
+  const { min: { x: minX, y: minY, z: minZ }, max: { x: maxX, y: maxY, z: maxZ } } = norm;
 
   if (inConstruct) {
     const n = mutableCount ?? 0;

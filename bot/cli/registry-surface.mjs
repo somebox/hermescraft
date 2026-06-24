@@ -74,7 +74,7 @@ export const SURFACE_MICROSCOPE = new Set([
   'acknowledge_command',
   'cancel_command',
   'construct',
-  'repair',
+  'blueprint_repair',
   'goals',
   'goal_add',
   'goal_set',

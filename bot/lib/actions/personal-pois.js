@@ -191,7 +191,7 @@ export function createPersonalPoiActions(deps) {
       if (!pois[name]) return ok({ result: `No POI '${name}'` });
       const p = pois[name];
       const b = ensureBot();
-      const navigateToTarget = services?.getActions?.()?.navigateToTarget;
+      const navigateToTarget = services?.getActions?.()?._navigateToTarget;
       if (config?.behaviors?.navMoveResolve === true && typeof navigateToTarget === 'function') {
         const nav = await navigateToTarget({ x: p.x, y: p.y, z: p.z, near: 2, mark: name });
         if (!nav?.ok) return nav;

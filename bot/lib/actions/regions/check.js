@@ -11,10 +11,10 @@ export function createRegionsCheckActions(deps) {
   const { ctx, config, ensureBot } = deps;
 
   return {
-    async check(body) {
+    async region_check(args) {
       const b = ensureBot();
       const store = ctx.runtime?.regions;
-      const verb = String(body.verb || body.action || '').toLowerCase();
+      const verb = String(args.verb || args.action || '').toLowerCase();
       if (verb !== 'dig' && verb !== 'place') {
         return fail('INVALID_ARGS', 'check supports dig and place only', { retry_safe: false });
       }
@@ -25,16 +25,16 @@ export function createRegionsCheckActions(deps) {
       let blockName = null;
 
       if (verb === 'dig') {
-        const c = coord3(body);
+        const c = coord3(args);
         if (!c.ok) return c.response;
         ({ x, y, z } = c);
         const blk = b.blockAt(new Vec3(x, y, z));
-        blockName = blk?.name || body.block || 'unknown';
+        blockName = blk?.name || args.block || 'unknown';
       } else {
-        const itemParsed = itemName(body, { keys: ['block', 'item', 'name'] });
+        const itemParsed = itemName(args, { keys: ['block', 'item', 'name'] });
         if (!itemParsed.ok) return itemParsed.response;
         blockName = itemParsed.name;
-        const c = coord3(body);
+        const c = coord3(args);
         if (!c.ok) return c.response;
         ({ x, y, z } = c);
       }
@@ -61,7 +61,7 @@ export function createRegionsCheckActions(deps) {
         });
       }
 
-      const resolveArgs = buildRegionResolveArgs(ctx, body);
+      const resolveArgs = buildRegionResolveArgs(ctx, args);
       const regionResult = store.resolve(verb, resolveArgs, { x, y, z }, blockName);
 
       return ok({

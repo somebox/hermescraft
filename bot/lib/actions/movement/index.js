@@ -20,7 +20,7 @@ import { createLook } from './look.js';
 import { createJump } from './jump.js';
 import { createLadder } from './ladder.js';
 import { createStop } from './stop.js';
-import { createGoSite } from './go_site.js';
+import { createGoSite } from './go-site.js';
 import { createRetrace } from './retrace.js';
 import { createNavigateToTarget } from './navigate-to-target.js';
 
@@ -136,7 +136,7 @@ export function createMovementActions({
     jump: createJump(deps),
     ladder: createLadder(deps),
     move: moveFn,
-    navigateToTarget,
+    _navigateToTarget: navigateToTarget,
     retrace: createRetrace(deps),
   };
 }

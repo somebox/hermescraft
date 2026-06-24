@@ -12,7 +12,7 @@ test('go_mark uses navigateToTarget when HERMES_MOVE_RESOLVE is on', async () =>
       pathfinder: { setGoal: () => {} },
     }),
     getActions: () => ({
-      navigateToTarget: async (args) => {
+      _navigateToTarget: async (args) => {
         calls.push(args);
         return { ok: true, result: 'ok', data: {} };
       },

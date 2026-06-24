@@ -182,7 +182,7 @@ export function createLadder({ ensureBot, posObj }) {
 
     const direction = String(dir || 'up').toLowerCase();
     if (direction !== 'up' && direction !== 'down') {
-      return fail('INVALID_ARG', `ladder dir must be "up" or "down", got "${dir}"`, {
+      return fail('INVALID_ARGS', `ladder dir must be "up" or "down", got "${dir}"`, {
         retry_safe: false,
         next_action_hint: 'mc ladder up   OR   mc ladder down',
       });
@@ -266,7 +266,7 @@ export function createLadder({ ensureBot, posObj }) {
     if (explicitToY) {
       targetY = parseFloat(String(to));
       if (!Number.isFinite(targetY)) {
-        return fail('INVALID_ARG', `ladder --to must be a number, got "${to}"`, { retry_safe: false });
+        return fail('INVALID_ARGS', `ladder --to must be a number, got "${to}"`, { retry_safe: false });
       }
     } else if (direction === 'up') {
       targetY = exitMode === 'none' ? topY : topY + 1;

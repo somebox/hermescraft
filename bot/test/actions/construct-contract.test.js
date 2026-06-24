@@ -129,3 +129,36 @@ test('construct end: clears session and workset', async () => {
     else process.env.HERMES_CONSTRUCT_CONTEXT = prev;
   }
 });
+
+// Regression (gv2-2026-06-24-6): the registry/dispatcher invokes the top-level
+// `construct`/`blueprint` verb DETACHED from its action object, so internal
+// op-dispatch via `this.construct_show(...)` / `this.blueprint_verify(...)`
+// threw "Cannot read properties of undefined (reading 'construct_show')" the
+// moment construct context went live — and the planner abandoned the blueprint
+// pipeline. The verbs must dispatch via a closure ref, not `this`.
+test('construct verb dispatches when invoked detached (no this binding)', async () => {
+  const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
+  process.env.HERMES_CONSTRUCT_CONTEXT = '1';
+  try {
+    const { actions } = constructActions();
+    const construct = actions.construct; // detach, as the dispatcher does
+    let threw = null, res = null;
+    try { res = await construct({ op: 'show' }); } catch (e) { threw = e; }
+    assert.equal(threw, null, threw && threw.message);
+    assert.equal(res.ok, false);
+    assert.equal(res.error.code, 'NOT_IN_CONSTRUCT'); // reached the handler, not a crash
+  } finally {
+    if (prev === undefined) delete process.env.HERMES_CONSTRUCT_CONTEXT;
+    else process.env.HERMES_CONSTRUCT_CONTEXT = prev;
+  }
+});
+
+test('blueprint verb dispatches when invoked detached (no this binding)', async () => {
+  const { actions, ...d } = constructActions();
+  const bp = createBlueprintActions(d);
+  const blueprint = bp.blueprint; // detach
+  let threw = null, res = null;
+  try { res = await blueprint({ op: 'verify' }); } catch (e) { threw = e; }
+  assert.equal(threw, null, threw && threw.message);
+  assert.equal(typeof res.ok, 'boolean'); // structured result, not a TypeError
+});

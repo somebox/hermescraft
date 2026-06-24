@@ -4,6 +4,7 @@ import { collectOrderingPhase } from './ordering.js';
 import { executeCollectHarvest } from './execute.js';
 import { canSeeBotFacingFace } from '../../_los.js';
 import { fail } from '../../../shared/action-contract.js';
+import { itemName, count as parseCount, bool } from '../../_args.js';
 import {
   blockNeedsPickaxeHarvest,
   blockNeedsAxeHarvest,
@@ -120,7 +121,14 @@ export function createCollectHandler(deps) {
   const canSeeMinableFace = (targetPos) =>
     canSeeBotFacingFace(targetPos.x, targetPos.y, targetPos.z, { hasLineOfSight, eyePosition });
 
-  return async function collect({ block, count = 1, force = false }) {
+  return async function collect(args = {}) {
+    const blockParsed = itemName(args, { keys: ['block', 'item', 'name'] });
+    if (!blockParsed.ok) return blockParsed.response;
+    const countParsed = parseCount(args, { default: 1, key: 'count' });
+    if (!countParsed.ok) return countParsed.response;
+    const block = blockParsed.name;
+    const count = countParsed.count;
+    const force = bool(args.force, false);
     const b = ensureBot();
     ctx.tasks.cancelRequested = false;
     const blockName = resolveMiningBlockName(block);

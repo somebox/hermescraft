@@ -270,13 +270,13 @@ test('verify at_mark (from mode): accepts {x,y,z} object form', async () => {
   assert.equal(r.data.observed.dist, 50);
 });
 
-test('verify at_mark (from mode): malformed from → INVALID_ARG', async () => {
+test('verify at_mark (from mode): malformed from → INVALID_ARGS', async () => {
   const { verify } = createVerifyActions(makeServices({
     locations: { load: () => ({ field_south: { x: 0, y: 65, z: 0 } }) },
   }));
   const r = await verify({ kind: 'at_mark', mark: 'field_south', from: 'not-coords' });
   assert.equal(r.ok, false);
-  assert.equal(r.error.code, 'INVALID_ARG');
+  assert.equal(r.error.code, 'INVALID_ARGS');
   assert.equal(r.error.retry_safe, false);
 });
 
@@ -446,6 +446,31 @@ test('verify region_blocks: missing block → MISSING_ARG', async () => {
   });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'MISSING_ARG');
+});
+
+test('verify region_blocks: corner missing y/z coords → INVALID_ARGS', async () => {
+  const { verify } = createVerifyActions(makeServices());
+  const r = await verify({
+    kind: 'region_blocks',
+    corner1: { x: 0, z: 0 }, // no y
+    corner2: { x: 1, y: 1, z: 1 },
+    block: 'farmland',
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'INVALID_ARGS');
+  assert.match(r.error.message, /numeric x, y, z/);
+});
+
+test('verify region_blocks: non-numeric corner coord → INVALID_ARGS', async () => {
+  const { verify } = createVerifyActions(makeServices());
+  const r = await verify({
+    kind: 'region_blocks',
+    corner1: { x: 0, y: 'nope', z: 0 },
+    corner2: { x: 1, y: 1, z: 1 },
+    block: 'farmland',
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'INVALID_ARGS');
 });
 
 // ── UNKNOWN_KIND lists new verbs ────────────────────────────────────────

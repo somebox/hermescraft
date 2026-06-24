@@ -814,7 +814,7 @@ export function createFarmingActions(deps) {
             retry_safe: true,
           },
         } : {}),
-    };
+      };
   };
 
   return actions;

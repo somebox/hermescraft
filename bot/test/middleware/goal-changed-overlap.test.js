@@ -14,6 +14,11 @@ import { describePathfinderError } from '../../lib/actions/movement/nav-hints.js
 import { shouldDeferReaction } from '../../lib/runtime/reactive.js';
 import { createBotState } from '../../lib/server/state.js';
 
+function transportErrMsg(r) {
+  if (typeof r.error === 'string') return r.error;
+  return r.error?.message || '';
+}
+
 function fixture({ mockBotOverrides = {} } = {}) {
   const state = createBotState({ behaviors: { fairPlay: true } });
   const mockBot = {
@@ -109,7 +114,7 @@ test('Level 2: sync dispatch is rejected while bg task is running (409)', async 
   const blocked = await dispatchAction(services, 'quick_sync', {}, { mode: 'sync', ...opts });
   assert.equal(blocked.ok, false);
   assert.equal(blocked.status, 409);
-  assert.match(blocked.error, /already running/i);
+  assert.match(transportErrMsg(blocked), /already running/i);
 
   resolveBg(ok({ result: 'bg done' }));
   await new Promise((r) => setImmediate(r));
@@ -132,7 +137,7 @@ test('Level 2: overlapping sync actions are rejected with 409', async () => {
 
   assert.equal(p2.ok, false);
   assert.equal(p2.status, 409);
-  assert.match(p2.error, /sync action .* already running/i);
+  assert.match(transportErrMsg(p2), /sync action .* already running/i);
 
   releaseFirst();
   const r1 = await p1;
@@ -178,7 +183,7 @@ test('Level 4: compound-like in-flight sync action blocks follow-on nav sync (40
 
   assert.equal(blockedMove.ok, false);
   assert.equal(blockedMove.status, 409);
-  assert.match(blockedMove.error, /sync action .* already running/i);
+  assert.match(transportErrMsg(blockedMove), /sync action .* already running/i);
 
   releaseCompound();
   const compoundResult = await pCompound;

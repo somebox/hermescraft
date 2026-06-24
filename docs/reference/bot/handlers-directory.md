@@ -50,7 +50,7 @@ Boat **routing math** stays in `bot/lib/runtime/water-route.js` and `bot/lib/run
 | `_block-sets.js` | `AIR_NAMES`, `REPLACEABLE`, boat/fish constants |
 | `_directions.js` | `DIR_VEC_4` / `DIR_VEC_8`, `cardinalDelta` |
 | `_los.js` | `standardBlockFacePoints`, `canSeeBlockFaces` |
-| `_args.js` | `coord3`, `box6`, `boxXZ`, `itemName`, `count` → `INVALID_ARGS` |
+| `_args.js` | `coord3`, `box6`, `boxXZ`, `itemName`, `count`, `bool` → `INVALID_ARGS` |
 
 New cross-cutting constants belong in these helpers, not copied into handlers.
 
@@ -61,3 +61,10 @@ New cross-cutting constants belong in these helpers, not copied into handlers.
 3. Wire factory in `bot/lib/actions/index.js`.
 4. Register CLI in `bot/cli/registry.mjs`.
 5. Document canonical args in [`mc-command-reference.md`](../mc-command-reference.md).
+
+### Style checklist (see [code-style-standards.md](./code-style-standards.md))
+
+- Handler signature **`async verb(args)`**; parse with **`_args.js`**; return **`ok()` / `fail()`**.
+- Public key **snake_case**; internal helpers **`_name`** on ACTIONS if exposed.
+- Add or extend **`*-contract.test.js`** using **`assertContract` / `assertFailure`** from `bot/test/_helpers/action-harness.js`.
+- After registry changes: **`scripts/regenerate-artifacts.sh`** and **`npm test`** (cheatsheet-sync, prompts-sync, cli-action-sync).

@@ -11,7 +11,7 @@ import {
 import { enrichWithStand } from './_preflight.js';
 import { isDetourAllowed, detourHintForDy } from './detour-check.js';
 import { navBlockedNextActionHint, withNavRetryWarning, describePathfinderError } from './nav-hints.js';
-import { coord3 } from '../_args.js';
+import { coord3, bool } from '../_args.js';
 import { recordNavBriefFailureForMark } from '../../runtime/nav-brief.js';
 
 /**
@@ -121,7 +121,7 @@ export function createMove(deps) {
     }
     if (args?.raw === true && config?.behaviors?.navMoveResolve === true) {
       const { services } = deps;
-      const nav = services?.getActions?.()?.navigateToTarget;
+      const nav = services?.getActions?.()?._navigateToTarget;
       if (typeof nav === 'function') {
         return nav({
           x: args.x,
@@ -321,7 +321,7 @@ export function createMove(deps) {
     // length and suggests the right primitive (tunnel/stair_down) when the
     // target is below them. `force: true` bypasses the check for cases where
     // the long route is genuinely intended.
-    const force = args.force === true || args.force === 'true' || args.force === 1;
+    const force = bool(args.force, false);
     {
       const myPos = b.entity.position;
       const dx = target.x - myPos.x;

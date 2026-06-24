@@ -45,6 +45,26 @@ test('mining.collect: UNKNOWN_BLOCK is a conforming failure envelope', async () 
   assert.match(r.error.message, /not_a_real_block/);
 });
 
+test('mining.collect: missing block → INVALID_ARGS from itemName', async () => {
+  const actions = createMiningActions(makeDeps());
+  const r = await actions.collect({});
+  const v = validate(r);
+  assert.equal(v.valid, true);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'INVALID_ARGS');
+  assert.match(r.error.message, /Expected one of:/);
+});
+
+test('mining.collect: non-positive count → INVALID_ARGS from parseCount', async () => {
+  const actions = createMiningActions(makeDeps());
+  const r = await actions.collect({ block: 'dirt', count: 0 });
+  const v = validate(r);
+  assert.equal(v.valid, true);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'INVALID_ARGS');
+  assert.match(r.error.message, /positive integer count/);
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // 2. cancelRequested cleared on entry (Fix B) — stale flag must not block
 //    a fresh collect from running.
@@ -1578,4 +1598,64 @@ test('mining.collect: equips shovel for dirt when pickaxe was held (tool switch)
   const r = await actions.collect({ block: 'dirt', count: 1 });
   assert.equal(r.ok, true);
   assert.equal(held.name, 'iron_shovel');
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Regression: plain {x,y,z} pool entries must be coerced to Vec3 before
+// b.blockAt. ordering.js runs the all-same-y volume branch (and the
+// trunk-harvest branch) through orderCells → normalizeUnit, which strips the
+// Vec3 prototype. Real mineflayer's b.blockAt(point) calls point.floored()
+// internally, so a plain object threw "pos.floored is not a function"
+// (gv2-2026-06-24, zee mining oak_log). The test mocks here usually accept
+// plain objects, hiding the bug — so this stub mimics mineflayer by REQUIRING
+// .floored() on the arg.
+// ─────────────────────────────────────────────────────────────────────────
+test('mining.collect: plain-object pool entries are coerced to Vec3 (b.blockAt requires .floored)', async () => {
+  const baseY = 63;
+  const patch = flatPatch('dirt', baseY, 2); // 5×5, all same y → volume branch → plain objects
+  const cellNames = new Map();
+  for (const p of patch) cellNames.set(`${p.x},${p.y},${p.z}`, 'dirt');
+  const world = makeMutableWorld(cellNames);
+  const bot = makeStubBot({ position: new Vec3(0.5, 64, -3.5) });
+  // Mimic mineflayer: blockAt calls pos.floored() internally. A plain
+  // {x,y,z} (no prototype) makes this throw — exactly the production crash.
+  bot.blockAt = (pos) => {
+    if (typeof pos?.floored !== 'function') {
+      throw new TypeError('pos.floored is not a function');
+    }
+    const fp = pos.floored();
+    const name = world.get(fp);
+    if (!name || name === 'air') {
+      return { name: 'air', position: fp, boundingBox: 'empty', getProperties: () => ({}) };
+    }
+    return { name, position: fp, boundingBox: 'block', getProperties: () => ({}), type: 3, hardness: 0.5 };
+  };
+  bot.findBlocks = ({ matching }) => {
+    const ids = Array.isArray(matching) ? matching : [matching];
+    const wanted = new Set(ids);
+    return patch.filter((p) => world.get(p) === 'dirt' && wanted.has(3));
+  };
+  bot.dig = async (block) => { world.setAir(block.position); };
+  // Capture logs: the harvest loop catches the per-candidate throw and
+  // recovers via refreshPool (which yields Vec3s), so mined_count still
+  // reaches the target even WITHOUT the fix — masking the bug. The honest
+  // signal is the logged error. Assert it never appears.
+  const logs = [];
+  const deps = makeDeps({
+    bot,
+    log: (m) => logs.push(String(m)),
+    hasLineOfSight: () => true,
+    eyePosition: () => new Vec3(0.5, 65.6, -3.5),
+    findVisible: async (name) =>
+      name !== 'dirt' ? [] : patch.filter((p) => world.get(p) === 'dirt').map((p) => ({ position: p })),
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'dirt', count: 5 });
+  assert.equal(r.ok, true);
+  assert.equal(r.data.mined_count, 5);
+  // The first batch (from orderCells → plain objects) must be processed
+  // without the b.blockAt floored() crash.
+  const flooredErr = logs.find((m) => m.includes('floored'));
+  assert.equal(flooredErr, undefined,
+    `no candidate should hit "pos.floored is not a function"; got: ${flooredErr}`);
 });

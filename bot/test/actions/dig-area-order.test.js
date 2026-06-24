@@ -7,6 +7,7 @@ import { Vec3 } from 'vec3';
 
 import { createExcavationActions } from '../../lib/actions/excavation.js';
 import { createMockServices } from '../../lib/server/mock-services.js';
+import { validate } from '../../lib/shared/action-contract.js';
 
 test('dig_area kernel: 3×3 layer uses monotonic row sweep not Chebyshev ring', async () => {
   const digOrder = [];
@@ -54,6 +55,9 @@ test('dig_area kernel: 3×3 layer uses monotonic row sweep not Chebyshev ring', 
     _useKernel: true,
   });
   assert.equal(r.dug, 9);
+  const v = validate(r);
+  assert.equal(v.valid, true, v.issues?.join('; '));
+  assert.equal(r.ok, true);
   assert.equal(digOrder.length, 9);
   const steps = [];
   for (let i = 1; i < digOrder.length; i++) {

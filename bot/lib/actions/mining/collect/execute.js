@@ -1,3 +1,5 @@
+import { Vec3 } from 'vec3';
+
 import { equipForDig, isDigProtected } from '../../../runtime/dig-tools.js';
 import { markBriefRefreshRequired } from '../../../runtime/nav-brief.js';
 import {
@@ -253,6 +255,17 @@ async function processCandidate(state, pos, equipForDigCached, instantFailState)
   const { cctx } = state;
   const { b, ctx, config, goals, sleep, log, force, canSeeMinableFace, count, blockName } = cctx;
   const { acceptedTargetNames } = state.phaseInputs;
+
+  // Pool entries can be plain {x,y,z} objects: the trunk-harvest and
+  // all-same-y volume branches in ordering.js run candidates through
+  // orderCells → normalizeUnit, which strips the Vec3 prototype. mineflayer's
+  // b.blockAt(point) calls point.floored() internally, so a plain object
+  // throws "pos.floored is not a function" (gv2-2026-06-24, zee mining
+  // oak_log). Coerce once here — the single chokepoint for all downstream
+  // b.blockAt(pos)/pos.offset/distanceTo(pos)/GoalNear(pos.*) uses.
+  if (!(pos instanceof Vec3) && typeof pos?.floored !== 'function') {
+    pos = new Vec3(pos.x, pos.y, pos.z);
+  }
 
   const k = posKey(pos);
   if (state.triedKeys.has(k)) return 'continue';

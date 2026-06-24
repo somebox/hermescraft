@@ -1,4 +1,5 @@
 import { ok, fail } from '../../shared/action-contract.js';
+import { bool } from '../_args.js';
 import { normalizeMineId, POINT_KINDS } from '../../runtime/mines/index.js';
 
 /**
@@ -83,7 +84,7 @@ export function createMinesActions(deps) {
           resource: body.resource || null,
           qty_estimate: body.qty != null ? Number(body.qty) : null,
           hazard: body.hazard || null,
-          sealed: body.sealed === true || body.sealed === 'true',
+          sealed: bool(body.sealed, false),
           by: ctx.config?.mc?.username || null,
         });
       } catch (e) {
@@ -175,7 +176,7 @@ export function createMinesActions(deps) {
       if (got.error) return got.error;
       const id = normalizeMineId(body.id);
       if (!got.store.get(id)) return fail('MINE_NOT_FOUND', `No mine "${id}"`, { retry_safe: false });
-      const confirmed = body.confirm === true || body.confirm === 'true';
+      const confirmed = bool(body.confirm, false);
       if (!confirmed) {
         return fail('MISSING_CONFIRM', `Refusing to remove mine "${id}" (loses its discovery state) without confirm=true`, {
           next_action_hint: `mc mine_remove ${id} --confirm`,

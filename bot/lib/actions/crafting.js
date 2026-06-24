@@ -328,7 +328,7 @@ export function createCraftingActions(services) {
             expectedDelta: invocations * resultPerCraft, reason,
           });
           if (fb) {
-            if (table?.position) autoMarkCraftingTable(table.position);
+            if (requiresBench && table?.position) autoMarkCraftingTable(table.position);
             return fb;
           }
           // server-side craft didn't land — fall through to native attempts.
@@ -343,7 +343,7 @@ export function createCraftingActions(services) {
       // and retry several times before surrendering. The PaperMCP server-side
       // fallback also covers this, but bodies without PaperMCP configured rely
       // entirely on this in-process retry (which is why a lone attempt made
-      // agents see a "broken" craft and give up). 2x2 recipes don't hit the race.
+      // agents see a "broken" craft and give up).
       // 2x2 was 1 attempt on the assumption it never no-ops — false (crafting_table /
       // plank no-ops). Give it a few native retries too (PaperMCP-first already handles
       // the configured case; this covers bodies without PaperMCP).
@@ -392,7 +392,7 @@ export function createCraftingActions(services) {
             if (fb) {
               // #100: server-side fallback succeeded — the table at
               // `table.position` proved usable; auto-mark it.
-              if (table?.position) autoMarkCraftingTable(table.position);
+              if (requiresBench && table?.position) autoMarkCraftingTable(table.position);
               return fb;
             }
           }
@@ -472,7 +472,7 @@ export function createCraftingActions(services) {
           });
           if (fb) {
             // #100: server-side fallback succeeded — auto-mark the table.
-            if (table?.position) autoMarkCraftingTable(table.position);
+            if (requiresBench && table?.position) autoMarkCraftingTable(table.position);
             return fb;
           }
         }
@@ -526,7 +526,7 @@ export function createCraftingActions(services) {
           }
         }
         const rangeMsg = !requiresBench
-          ? `This is a 2x2 recipe (no table needed); retry once.`
+          ? `This is a 2x2 recipe (no table needed); retried up to ${MAX_CRAFT_ATTEMPTS} times.`
           : tableDist == null
             ? `No crafting_table was in range when the craft fired — mineflayer can't craft a table recipe without one within ~4 blocks. Place a crafting_table on solid ground right beside you (mc place crafting_table <x> <y> <z> at an adjacent ground cell) and retry.`
             : tableDist > 4
@@ -556,7 +556,7 @@ export function createCraftingActions(services) {
             retry_safe: true,
             next_action_hint: requiresBench
               ? `Place/stand next to a crafting_table (within 2 blocks, on solid ground), then retry ONCE. Do NOT loop-retry or report the server broken — crafting is functional.`
-              : `Retry once.`,
+              : `Retry (up to ${MAX_CRAFT_ATTEMPTS} attempts).`,
           },
         );
       }
@@ -872,11 +872,11 @@ export async function buildCraftDiag({
 }
 
 /**
- * Server-side craft fallback for table-required (3x3) recipes that mineflayer's
- * b.craft cannot complete on Paper 1.21+ (open mineflayer issue #3399). Consumes
- * ingredients via /clear and gives the result via /give through PaperMCP. Verifies
- * via inventory delta. Returns null if PaperMCP is unavailable or the fallback
- * itself fails — caller falls through to the original INTERRUPTED error.
+ * Server-side craft fallback for recipes that mineflayer's b.craft cannot
+ * complete on Paper 1.21+ (open mineflayer issue #3399; also some 2x2 cases).
+ * Consumes ingredients via /clear and gives the result via /give through PaperMCP.
+ * Verifies via inventory delta. Returns null if PaperMCP is unavailable or the
+ * fallback itself fails — caller falls through to the original path.
  */
 async function serverSideCraftFallback({
   itemName, count, recipe, ctx, b,
@@ -887,7 +887,7 @@ async function serverSideCraftFallback({
   if (!pmcpCfg) return null;
   const username = getMyName();
   if (!username) return null;
-  if (log) log(`[craft] server-side craft for ${itemName} x${count} (PaperMCP — avoids 3x3 window race)`);
+  if (log) log(`[craft] server-side craft for ${itemName} x${count} (PaperMCP — avoids native no-op/window race)`);
 
   const totalIngs = {};
   for (const [n, perCraft] of Object.entries(requiredIngs)) {
@@ -937,7 +937,7 @@ async function serverSideCraftFallback({
       requested_count: count,
       expected_per_craft: recipe.result?.count || 1,
       recipe_used: {
-        requires_table: true,
+        requires_table: recipe.requiresTable !== false,
         result_per_craft: recipe.result?.count || 1,
         fallback: 'papermcp_server_side',
       },
@@ -949,3 +949,7 @@ async function serverSideCraftFallback({
     result: `Crafted ${itemName} x${craftedDelta} (server-side fallback)`,
   });
 }
+
+// Exported for contract tests to exercise the 2x2 + PaperMCP fallback path
+// without network (by stubbing executeServerCommand on the module namespace).
+export { serverSideCraftFallback as __testOnly_serverSideCraftFallback };

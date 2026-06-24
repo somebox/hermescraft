@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGoSite } from '../../lib/actions/movement/go_site.js';
+import { createGoSite } from '../../lib/actions/movement/go-site.js';
 import { createRegionStore } from '../../lib/runtime/regions/index.js';
 import { ok } from '../../lib/shared/action-contract.js';
 

@@ -4,6 +4,9 @@
  */
 
 import { fail } from '../shared/action-contract.js';
+import { coerceBool } from '../shared/bool-coerce.js';
+
+export { normalizeInclusiveBox6, toBlockPos } from '../runtime/coordinates.js';
 
 function finiteNum(v) {
   const n = Number(v);
@@ -75,6 +78,12 @@ export function boxXZ(args) {
   const w = finiteNum(args?.w);
   const l = finiteNum(args?.l);
   if (x != null && z != null && w != null && l != null) {
+    if (w < 1 || l < 1) {
+      return {
+        ok: false,
+        response: fail('INVALID_ARGS', 'Pit width w and length l must be >= 1', { retry_safe: false }),
+      };
+    }
     const y = args.y != null ? finiteNum(args.y) : undefined;
     const d = args.d != null ? finiteNum(args.d) : undefined;
     return {
@@ -121,13 +130,7 @@ export function itemName(args, { keys = ['item', 'block', 'name'] } = {}) {
  * @param {boolean} [def]
  */
 export function bool(v, def = false) {
-  if (v === undefined || v === null || v === '') return def;
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'number') return v !== 0;
-  const s = String(v).trim().toLowerCase();
-  if (s === 'false' || s === 'no' || s === '0' || s === 'off') return false;
-  if (s === 'true' || s === 'yes' || s === '1' || s === 'on') return true;
-  return Boolean(v);
+  return coerceBool(v, def);
 }
 
 /**

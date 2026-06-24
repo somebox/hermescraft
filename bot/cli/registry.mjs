@@ -77,7 +77,11 @@ export const RAW_COMMAND_DEFS = [
   g('nearby', 'perceive', ['n'], {
     description: 'List nearby blocks/entities within radius',
     method: 'GET',
-    pathFn: (p) => `/nearby?radius=${encodeURIComponent(Number(p.radius) || 32)}`,
+    pathFn: (p) => {
+      const r = Number(p.radius ?? 32);
+      const radius = Number.isFinite(r) && r >= 0 ? r : 32;
+      return `/nearby?radius=${encodeURIComponent(radius)}`;
+    },
     argSchema: [{ key: 'radius', type: 'number', default: 32 , min: 1, max: 64}],
     examples: ['mc nearby 48'],
   }),
@@ -2138,11 +2142,11 @@ export const RAW_COMMAND_DEFS = [
     path: '/action/site_remove',
     customParse: true,
   }),
-  g('check', 'building', [], {
+  g('region_check', 'building', ['check'], {
     description: 'Dry-run region policy for dig/place',
-    examples: ["mc check"],
+    examples: ['mc check', 'mc region_check'],
     method: 'POST',
-    path: '/action/check',
+    path: '/action/region_check',
     customParse: true,
   }),
   g('blueprint', 'building', [], {
@@ -2166,11 +2170,11 @@ export const RAW_COMMAND_DEFS = [
     path: '/action/construct',
     customParse: true,
   }),
-  g('repair', 'building', [], {
+  g('blueprint_repair', 'building', ['repair'], {
     description: 'Repair region to blueprint or edit-log target',
-    examples: ["mc repair"],
+    examples: ['mc repair', 'mc blueprint_repair'],
     method: 'POST',
-    path: '/action/repair',
+    path: '/action/blueprint_repair',
     customParse: true,
   }),
   g('task_context', 'task', ['task-context'], {
@@ -2429,7 +2433,11 @@ export const RAW_COMMAND_DEFS = [
     method: 'POST',
     path: '/action/nearby_signs',
     argSchema: [{ key: 'radius', type: 'number', default: 32, min: 4, max: 64 }],
-    bodyFn: (p) => JSON.stringify({ radius: Number(p.radius) || 32 }),
+    bodyFn: (p) => {
+      const r = Number(p.radius ?? 32);
+      const radius = Number.isFinite(r) && r >= 0 ? r : 32;
+      return JSON.stringify({ radius });
+    },
     usage: 'mc nearby_signs [RADIUS]',
   }),
 

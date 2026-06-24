@@ -5,6 +5,7 @@
 import path from 'node:path';
 import { Vec3 } from 'vec3';
 import { ok, fail } from '../shared/action-contract.js';
+import { bool } from '../actions/_args.js';
 import { createBlueprintActions } from '../actions/blueprints/index.js';
 import { parsePlanIdFromTarget, resolvePlanContext, loadPlanJson, enrichPlan } from './blueprints/loader.js';
 import { evaluateConstructEndGates, evaluatePhaseClean } from './construct-end-gates.js';
@@ -381,8 +382,8 @@ export function buildGuidedEditProgress(ctx) {
  */
 export function runConstructEndGateCheck(deps, session, body = {}) {
   if (!constructScopingEnabled()) return { ok: true };
-  const skipGates = body.skip_gates === true || body.skip_gates === 'true';
-  const skipPhase = body.skip_phase_gate === true || body.skip_phase_gate === 'true';
+  const skipGates = bool(body.skip_gates, false);
+  const skipPhase = bool(body.skip_phase_gate, false);
   if (skipGates && skipPhase) {
     return { ok: true };
   }
@@ -462,12 +463,13 @@ export function runConstructEndGateCheck(deps, session, body = {}) {
   return { ok: true };
 }
 
-/** Attach construct telemetry to motor verb success payloads when session is active. */
+/** Attach construct telemetry; success motor payloads include ok: true for P9 validate(). */
 export function attachConstructMotorEnvelope(ctx, data = {}) {
   const session = getConstructContext(ctx);
-  if (!session) return data;
+  if (!session) return { ok: true, ...data };
   const progress = buildGuidedEditProgress(ctx);
   return {
+    ok: true,
     ...data,
     construct_context: {
       plan_id: session.plan_id,

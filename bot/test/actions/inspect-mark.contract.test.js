@@ -10,6 +10,7 @@ import { createInspectQueries } from '../../lib/actions/queries/inspect.js';
 import { createFarmingActions } from '../../lib/actions/farming.js';
 import { buildHttpRequest } from '../../cli/dispatch.mjs';
 import { resolveCommand, buildAliasMap } from '../../cli/registry.mjs';
+import { validate } from '../../lib/shared/action-contract.js';
 
 const ALIAS = buildAliasMap();
 
@@ -61,6 +62,7 @@ test('farm_status --mark builds 9×9 rect', async () => {
   });
   const r = await actions.farm_status({ mark: 'wheat_plot', size: 9 });
   assert.equal(r.ok, true);
+  assert.equal(validate(r).valid, true);
   assert.equal(r.data.column_count, 81);
 });
 

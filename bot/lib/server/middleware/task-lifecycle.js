@@ -20,6 +20,7 @@
  * `body.reason` is captured into the actionHistory entry for traceability,
  * regardless of mode.
  */
+import { transportErrorBody } from './transport-error.js';
 
 import fs from 'fs';
 import path from 'path';
@@ -219,7 +220,7 @@ export async function dispatchAction(services, actionName, body, opts) {
     return {
       ok: false,
       status: 400,
-      error: `Unknown action "${actionName}". Available: ${available}`,
+      ...transportErrorBody('UNKNOWN_ACTION', `Unknown action "${actionName}". Available: ${available}`),
     };
   }
 
@@ -229,7 +230,10 @@ export async function dispatchAction(services, actionName, body, opts) {
       return {
         ok: false,
         status: 409,
-        error: `Sync action "${ctx.tasks.syncActionName || 'unknown'}" is already running (${elapsedS}s). Retry after it finishes.`,
+        ...transportErrorBody(
+          'SYNC_ACTION_IN_FLIGHT',
+          `Sync action "${ctx.tasks.syncActionName || 'unknown'}" is already running (${elapsedS}s). Retry after it finishes.`,
+        ),
       };
     }
     // Conflict: an existing bg task is still running.
@@ -238,7 +242,10 @@ export async function dispatchAction(services, actionName, body, opts) {
       return {
         ok: false,
         status: 409,
-        error: `Task "${runningTask.action}" is already running (${elapsedS}s). POST /task/cancel first.`,
+        ...transportErrorBody(
+          'TASK_IN_FLIGHT',
+          `Task "${runningTask.action}" is already running (${elapsedS}s). POST /task/cancel first.`,
+        ),
       };
     }
 
@@ -326,7 +333,10 @@ export async function dispatchAction(services, actionName, body, opts) {
     return {
       ok: false,
       status: 409,
-      error: `Sync action "${ctx.tasks.syncActionName || 'unknown'}" is already running (${elapsedS}s). Retry after it finishes.`,
+      ...transportErrorBody(
+        'SYNC_ACTION_IN_FLIGHT',
+        `Sync action "${ctx.tasks.syncActionName || 'unknown'}" is already running (${elapsedS}s). Retry after it finishes.`,
+      ),
     };
   }
   if (runningTask) {
@@ -334,7 +344,10 @@ export async function dispatchAction(services, actionName, body, opts) {
     return {
       ok: false,
       status: 409,
-      error: `Task "${runningTask.action}" is already running (${elapsedS}s). Retry after it finishes or POST /task/cancel first.`,
+      ...transportErrorBody(
+        'TASK_IN_FLIGHT',
+        `Task "${runningTask.action}" is already running (${elapsedS}s). Retry after it finishes or POST /task/cancel first.`,
+      ),
     };
   }
   const startedAt = Date.now();
@@ -375,6 +388,16 @@ export async function dispatchAction(services, actionName, body, opts) {
     recordActionOutcome(ctx, actionName, status, errorMsg);
     emitSyncNavTelemetry(services, actionName, result);
     runDevValidator(actionName, result);
+
+    const durationMs = Date.now() - startedAt;
+    if (process.env.HERMES_DISPATCH_LOG === '1') {
+      console.log(JSON.stringify({
+        dispatch: actionName,
+        ok: !softFailure,
+        code: softFailure ? result?.error?.code : undefined,
+        duration_ms: durationMs,
+      }));
+    }
 
     return {
       ok: true,

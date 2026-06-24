@@ -23,7 +23,7 @@ const HOT_PATH = new Set([
   'dig', 'collect', 'place', 'craft', 'chest', 'deposit', 'withdraw',
   'goto', 'goto_near', 'move', 'escape', 'pillar_up', 'pillar_down', 'smelt',
   'fight', 'observe', 'status', 'scene', 'nearby', 'mark', 'go_mark', 'regions',
-  'construct', 'repair', 'blueprint', 'check',
+  'construct', 'blueprint_repair', 'blueprint', 'region_check',
 ]);
 
 /** P0 — must reach strong + contract in bot/test after audit work */
@@ -64,7 +64,7 @@ function weakRef(name, content) {
 }
 
 function hasContractAssertions(content) {
-  return /assertFailure|assertContract/.test(content);
+  return /assertFailure|assertContract|\bvalidate\s*\(/.test(content);
 }
 
 function classifyCommand(def, nodeFiles, funcFiles) {
@@ -157,7 +157,7 @@ function main() {
     '',
     '### Tier definitions',
     '',
-    '- **contract** — strong handler/route ref in a test file that uses `assertContract` / `assertFailure`',
+    '- **contract** — strong handler/route ref in a test file that uses `assertContract` / `assertFailure` / `validate(`',
     '- **strong** — explicit handler invocation or audit smoke title, no contract asserts in that file',
     '- **weak** — word match only (may be false positive for ambiguous verbs)',
     '- **audit-smoke** — primarily `commands-audit-coverage.test.js`',

@@ -186,7 +186,7 @@ test('createBotHttpListener POST /action/x with empty registry returns 400', asy
     const r = await request(port, '/action/chat', 'POST', {});
     assert.equal(r.status, 400);
     assert.equal(r.json.ok, false);
-    assert.match(String(r.json.error || ''), /Unknown action/);
+    assert.match(String(r.json.error?.message || r.json.error || ''), /Unknown action/);
   } finally {
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }

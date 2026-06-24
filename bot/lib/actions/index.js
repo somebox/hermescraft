@@ -70,7 +70,6 @@ export function createAllActions(deps) {
     ...crafting,
     ...verify,
     ...feedback,
-    ...createMovementActions(deps),
     ...createMiningActions(deps),
     ...createContainerActions(deps),
     ...createMarksActions(deps),

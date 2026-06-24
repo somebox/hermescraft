@@ -99,3 +99,14 @@ test('action module factory names match the createXxxActions convention', () => 
 
   assert.equal(violations.length, 0, `convention violations:\n  ${violations.join('\n  ')}`);
 });
+
+test('nested create*Actions factories used by index.js are imported', () => {
+  const indexSrc = fs.readFileSync(INDEX_PATH, 'utf8');
+  const nested = [
+    ['construct/index.js', 'createConstructActions'],
+    ['regions/check.js', 'createRegionsCheckActions'],
+    ['movement/reach.js', 'createReachActions'],
+  ];
+  const missing = nested.filter(([, factory]) => !indexSrc.includes(factory));
+  assert.equal(missing.length, 0, `index.js missing nested factories: ${missing.map((m) => m[1]).join(', ')}`);
+});

@@ -86,3 +86,59 @@ export function normalizeBoxYArgs(args) {
   }
   return out;
 }
+
+/**
+ * Inclusive axis-aligned box from order-independent corners (block coords).
+ * @param {{ x1: number, y1: number, z1: number, x2: number, y2: number, z2: number }} box
+ * @returns {{ min: { x: number, y: number, z: number }, max: { x: number, y: number, z: number }, volume: number, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number }}
+ */
+export function normalizeInclusiveBox6(box) {
+  const x1 = Math.floor(Number(box.x1));
+  const y1 = Math.floor(Number(box.y1));
+  const z1 = Math.floor(Number(box.z1));
+  const x2 = Math.floor(Number(box.x2));
+  const y2 = Math.floor(Number(box.y2));
+  const z2 = Math.floor(Number(box.z2));
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+  const minZ = Math.min(z1, z2);
+  const maxZ = Math.max(z1, z2);
+  const volume = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+  return {
+    min: { x: minX, y: minY, z: minZ },
+    max: { x: maxX, y: maxY, z: maxZ },
+    volume,
+    x1: minX,
+    y1: minY,
+    z1: minZ,
+    x2: maxX,
+    y2: maxY,
+    z2: maxZ,
+  };
+}
+
+/**
+ * @param {number[] | { x?: number, y?: number, z?: number } | null | undefined} anchor
+ * @returns {{ x: number, y: number, z: number } | null}
+ */
+export function toBlockPos(anchor) {
+  if (anchor == null) return null;
+  if (Array.isArray(anchor)) {
+    if (anchor.length < 3) return null;
+    const x = Number(anchor[0]);
+    const y = Number(anchor[1]);
+    const z = Number(anchor[2]);
+    if (![x, y, z].every(Number.isFinite)) return null;
+    return { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) };
+  }
+  if (typeof anchor === 'object') {
+    const x = Number(anchor.x);
+    const y = Number(anchor.y);
+    const z = Number(anchor.z);
+    if (![x, y, z].every(Number.isFinite)) return null;
+    return { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) };
+  }
+  return null;
+}

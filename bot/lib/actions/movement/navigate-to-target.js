@@ -3,13 +3,14 @@
  * raw=true → goto stack (preflight/water refusal, no move detour guard).
  */
 import { recordNavBriefFailureForMark } from '../../runtime/nav-brief.js';
+import { bool } from '../_args.js';
 
 export function createNavigateToTarget(deps) {
   const { move, goto, goto_near: gotoNear, config, ctx } = deps;
 
   return async function navigateToTarget(opts = {}) {
-    const raw = opts.raw === true || opts.raw === 'true';
-    const force = opts.force === true || opts.force === 'true';
+    const raw = bool(opts.raw, false);
+    const force = bool(opts.force, false);
     const near = opts.near != null ? Number(opts.near) : undefined;
     const x = Number(opts.x);
     const y = Number(opts.y);

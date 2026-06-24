@@ -13,7 +13,7 @@ import { makeDeps, makeStubBot, makeStubMcData } from './actions/_mining-test-he
 
 const AUDIT_COMMANDS = [
   'alerts', 'anchors', 'blueprint', 'fair_play', 'furnaces', 'logistics', 'look_at',
-  'farm_status', 'fish', 'construct', 'repair', 'batch', 'dashboard', 'overhear',
+  'farm_status', 'fish', 'construct', 'blueprint_repair', 'batch', 'dashboard', 'overhear',
   'shoot', 'shield', 'sprint_attack', 'crit', 'strafe', 'combo',
   'acknowledge_command', 'cancel_command', 'complete_command',
   'region_update_intent', 'regions_reload', 'regions_terrain', 'site_remove',

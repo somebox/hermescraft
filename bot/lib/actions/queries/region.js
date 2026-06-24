@@ -2,7 +2,8 @@ import { Vec3 } from 'vec3';
 import { columnTopSolid } from '../../runtime/dig-tools.js';
 import { standabilityReason, findClosestStandable } from '../_nav-helpers.js';
 import { AIR_NAMES, WATER_NAMES } from '../_block-sets.js';
-import { withYBoth, parseYInput, surfaceFromBlock } from '../../runtime/coordinates.js';
+import { withYBoth, parseYInput, surfaceFromBlock, normalizeInclusiveBox6 } from '../../runtime/coordinates.js';
+import { bool } from '../_args.js';
 
 export function createRegionQueries({ ensureBot, posObj, goals }) {
   return {
@@ -115,14 +116,22 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
         };
       }
     }
-    const minX = Math.min(Number(x1), Number(x2));
-    const maxX = Math.max(Number(x1), Number(x2));
-    const minZ = Math.min(Number(z1), Number(z2));
-    const maxZ = Math.max(Number(z1), Number(z2));
+    const norm = normalizeInclusiveBox6({
+      x1: Number(x1),
+      y1: 0,
+      z1: Number(z1),
+      x2: Number(x2),
+      y2: 0,
+      z2: Number(z2),
+    });
+    const minX = norm.min.x;
+    const maxX = norm.max.x;
+    const minZ = norm.min.z;
+    const maxZ = norm.max.z;
     const s = Math.max(1, Math.min(parseInt(String(step), 10) || 1, 16));
     // Default true (proc-nav-1781079999) — production callers want ground Y.
-    const excludeFoliage = exclude_foliage !== false && exclude_foliage !== 'false' && exclude_foliage !== '0' && exclude_foliage !== 0;
-    const includeFull = full === true || full === 'true' || full === '1';
+    const excludeFoliage = bool(exclude_foliage, true);
+    const includeFull = bool(full, false);
     const w = maxX - minX + 1;
     const lFull = maxZ - minZ + 1;
     // Cap inputs at 512 sampled cells. A 3-wide × 160-block corridor at

@@ -49,7 +49,9 @@ function waitForMessage(ws, predicate, timeoutMs = 5000) {
  * @param {string} command - the command WITHOUT leading slash (e.g. "kill Flint")
  * @returns {Promise<{ok: boolean, result?: string, error?: string}>}
  */
-export async function executeServerCommand({ host, port, token }, command) {
+let _executeImpl = defaultExecuteServerCommand;
+
+async function defaultExecuteServerCommand({ host, port, token }, command) {
   const url = `ws://${host}:${port}`;
   const ws = new WebSocket(url);
 
@@ -84,6 +86,20 @@ export async function executeServerCommand({ host, port, token }, command) {
   } finally {
     try { ws.close(); } catch { /* ignore */ }
   }
+}
+
+export async function executeServerCommand(cfg, command) {
+  return _executeImpl(cfg, command);
+}
+
+// Test seam: allows contract tests to inject a successful stub without touching the network
+// or mutating read-only namespace bindings.
+export function __testOnly_setExecuteServerCommand(fn) {
+  _executeImpl = fn || defaultExecuteServerCommand;
+}
+
+export function __testOnly_resetExecuteServerCommand() {
+  _executeImpl = defaultExecuteServerCommand;
 }
 
 import { getConfig } from '../config/index.js';

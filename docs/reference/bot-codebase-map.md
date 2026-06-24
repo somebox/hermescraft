@@ -188,5 +188,6 @@ Command semantics and agent chains: [`docs/reference/mc-command-reference.md`](m
 - `docs/reference/engineering-patterns.md` — canonical pattern list (P1-P20)
 - `docs/archive/refactor-plan-2026.md` — history of the 2026 refactor (Phases 1-10) that produced this structure
 - `docs/reference/bot/handler-response-contracts.md` — error-code taxonomy per primitive (referenced by P9)
+- `docs/reference/bot/code-style-standards.md` — naming, params, geometry, errors (refactor phases)
 - [`docs/reference/mc-command-reference.md`](mc-command-reference.md) — canonical command taxonomy, argument schemas, chain playbooks (Section E)
 - `docs/reference/hermes-mc-boundaries.md` — Hermes ↔ bot interface contract

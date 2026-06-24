@@ -1,5 +1,7 @@
 /** @typedef {{ key:string, type:'string'|'number'|'boolean'|'json', required?:boolean, default?:unknown, min?:number, max?:number, enum?:string[] }} ArgSpec */
 
+import { coerceBool } from '../lib/shared/bool-coerce.js';
+
 /**
  * Strip global CLI flags before command dispatch.
  * @param {string[]} argv tokens after slicing off program (e.g. process.argv.slice(2))
@@ -209,9 +211,9 @@ export function coerceValue(spec, raw) {
 
   if (t === 'boolean') {
     if (typeof raw === 'boolean') return raw;
-    const s = String(raw).toLowerCase();
-    if (s === 'true' || s === '1' || s === 'yes') return true;
-    if (s === 'false' || s === '0' || s === 'no') return false;
+    const s = String(raw).trim().toLowerCase();
+    if (s === 'true' || s === '1' || s === 'yes' || s === 'on') return true;
+    if (s === 'false' || s === '0' || s === 'no' || s === 'off') return false;
     throw new Error('not_bool');
   }
 

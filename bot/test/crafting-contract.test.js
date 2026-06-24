@@ -17,7 +17,9 @@ import assert from 'node:assert/strict';
 
 import { validate } from '../lib/shared/action-contract.js';
 import { createMockServices } from '../lib/server/mock-services.js';
-import { createCraftingActions } from '../lib/actions/crafting.js';
+import { createCraftingActions, __testOnly_serverSideCraftFallback } from '../lib/actions/crafting.js';
+import { __testOnly_setExecuteServerCommand, __testOnly_resetExecuteServerCommand } from '../lib/runtime/paper-mcp.js';
+import { loadConfig } from '../lib/config/index.js';
 
 /** Codes the migrated crafting.js may return — keep in sync with handler bodies. */
 const KNOWN_CODES = new Set([
@@ -303,6 +305,197 @@ test('craft: #86 delta=0 with materials intact (no fallback) → CRAFT_NO_OP', a
   assert.equal(status.length, 1);
   assert.equal(status[0].have, 8);
   assert.equal(status[0].need, 1);
+});
+
+// ── 2x2 + PaperMCP paths (the widened coverage from the fix) ──
+
+test('craft: 2x2 (crafting_table) with PaperMCP configured succeeds via PaperMCP-first (no native run)', async () => {
+  // 4 oak_planks -> 1 crafting_table (2x2, requiresTable:false)
+  const recipe = {
+    requiresTable: false,
+    result: { count: 1, name: 'crafting_table' },
+    inShape: [[{ id: 23 }, { id: 23 }], [{ id: 23 }, { id: 23 }]],
+  };
+  const planks = [{ name: 'oak_planks', count: 4, type: 23 }];
+  let nativeCraftCalled = 0;
+  const mockBot = makeMockBot({
+    inventoryItems: planks,
+    bot: {
+      recipesFor: () => [recipe],
+      recipesAll: () => [recipe],
+      craft: async () => { nativeCraftCalled++; },
+      findBlock: () => null, // no table nearby (not needed for 2x2)
+    },
+  });
+  // Mutable backing for inventory so that the PaperMCP fallback's clear/give can be observed via inventoryAt()
+  let currentItems = planks.map((x) => ({ ...x }));
+  mockBot.inventory.items = () => currentItems.map((x) => ({ ...x }));
+
+  function applyServerCommand(cmd) {
+    // Very small simulator for the clear/give the fallback performs
+    const mClear = cmd.match(/^clear \S+ minecraft:(\S+) (\d+)$/);
+    if (mClear) {
+      const [, name, qtyStr] = mClear;
+      const qty = parseInt(qtyStr, 10);
+      const it = currentItems.find((i) => i.name === name);
+      if (it) {
+        it.count -= qty;
+        if (it.count <= 0) currentItems = currentItems.filter((i) => i.name !== name);
+      }
+      return;
+    }
+    const mGive = cmd.match(/^give \S+ minecraft:(\S+) (\d+)$/);
+    if (mGive) {
+      const [, name, qtyStr] = mGive;
+      const qty = parseInt(qtyStr, 10);
+      const existing = currentItems.find((i) => i.name === name);
+      if (existing) existing.count += qty;
+      else {
+        // fabricate a minimal item shape; type can be looked up but not required for count delta
+        const typeId = (name === 'crafting_table' ? 278 : 0);
+        currentItems.push({ name, count: qty, type: typeId });
+      }
+    }
+  }
+
+  // Enable PaperMCP in the lazy config and stub the executor so the fallback succeeds
+  const origToken = process.env.PAPERMCP_TOKEN;
+  process.env.PAPERMCP_TOKEN = 'test-token';
+  loadConfig(); // refresh singleton so paperMcpConfig() sees the token
+  __testOnly_setExecuteServerCommand(async (cfg, cmd) => {
+    applyServerCommand(cmd);
+    return { ok: true, result: 'ok' };
+  });
+
+  let autoMarkCalls = 0;
+  const services = createMockServices({
+    state: {
+      world: {
+        botReady: true,
+        mcData: {
+          itemsByName: { crafting_table: { id: 278 }, oak_planks: { id: 23 } },
+          blocksByName: { crafting_table: { id: 58 } },
+          items: { 23: { name: 'oak_planks' }, 278: { name: 'crafting_table' } },
+        },
+        bot: mockBot,
+      },
+    },
+    ensureBot: () => mockBot,
+    utils: { sleep: async () => {} },
+    craft: {
+      resolveCraftItemName: (raw) => raw,
+      buildCraftPlan: () => ({ ok: true, missing: [] }),
+      bestRecipeForInventory: (r) => r[0],
+    },
+  });
+  // Wrap autoMark to detect spurious marks for 2x2
+  const realAuto = services.autoMarkCraftingTable || (() => false);
+  services.autoMarkCraftingTable = (pos) => { autoMarkCalls++; return realAuto(pos); };
+
+  try {
+    const actions = createCraftingActions(services);
+    const r = await actions.craft({ item: 'crafting_table', count: 1 });
+    assertContract(r);
+    assert.equal(r.ok, true, '2x2 should succeed via PaperMCP-first when configured');
+    assert.equal(r.data.crafted_count, 1);
+    assert.equal(r.data.recipe_used.requires_table, false);
+    assert.equal(r.data.recipe_used.fallback, 'papermcp_server_side');
+    assert.equal(nativeCraftCalled, 0, 'native b.craft must not have been called (PaperMCP-first short-circuit)');
+    assert.equal(autoMarkCalls, 0, 'must not auto-mark a crafting_table for a 2x2 craft that did not use one');
+  } finally {
+    __testOnly_resetExecuteServerCommand();
+    if (origToken === undefined) delete process.env.PAPERMCP_TOKEN;
+    else process.env.PAPERMCP_TOKEN = origToken;
+    loadConfig(); // re-cache without the test token so later tests see clean config
+  }
+});
+
+test('craft: 2x2 delta=0 with materials intact + PaperMCP → succeeds via fallback (not CRAFT_NO_OP)', async () => {
+  const recipe = {
+    requiresTable: false,
+    result: { count: 4, name: 'oak_planks' },
+    inShape: [[{ id: 17 }]], // log -> 4 planks (simplified)
+  };
+  const inv = [{ name: 'oak_log', count: 1, type: 17 }];
+  const mockBot = makeMockBot({
+    inventoryItems: inv,
+    bot: {
+      recipesFor: () => [recipe],
+      recipesAll: () => [recipe],
+      craft: async () => {}, // native no-op
+      findBlock: () => null,
+    },
+  });
+  let currentItems = inv.map((x) => ({ ...x }));
+  mockBot.inventory.items = () => currentItems.map((x) => ({ ...x }));
+
+  function applyServerCommand(cmd) {
+    const mClear = cmd.match(/^clear \S+ minecraft:(\S+) (\d+)$/);
+    if (mClear) {
+      const [, name, qtyStr] = mClear;
+      const qty = parseInt(qtyStr, 10);
+      const it = currentItems.find((i) => i.name === name);
+      if (it) {
+        it.count -= qty;
+        if (it.count <= 0) currentItems = currentItems.filter((i) => i.name !== name);
+      }
+      return;
+    }
+    const mGive = cmd.match(/^give \S+ minecraft:(\S+) (\d+)$/);
+    if (mGive) {
+      const [, name, qtyStr] = mGive;
+      const qty = parseInt(qtyStr, 10);
+      const existing = currentItems.find((i) => i.name === name);
+      if (existing) existing.count += qty;
+      else {
+        const typeId = (name === 'oak_planks' ? 23 : 0);
+        currentItems.push({ name, count: qty, type: typeId });
+      }
+    }
+  }
+
+  const origToken = process.env.PAPERMCP_TOKEN;
+  process.env.PAPERMCP_TOKEN = 'test-token';
+  loadConfig(); // refresh singleton so paperMcpConfig() sees the token
+  __testOnly_setExecuteServerCommand(async (cfg, cmd) => {
+    applyServerCommand(cmd);
+    return { ok: true, result: 'ok' };
+  });
+
+  const services = createMockServices({
+    state: {
+      world: {
+        botReady: true,
+        mcData: {
+          itemsByName: { oak_planks: { id: 23 }, oak_log: { id: 17 } },
+          blocksByName: { crafting_table: { id: 58 } },
+          items: { 17: { name: 'oak_log' }, 23: { name: 'oak_planks' } },
+        },
+        bot: mockBot,
+      },
+    },
+    ensureBot: () => mockBot,
+    utils: { sleep: async () => {} },
+    craft: {
+      resolveCraftItemName: (raw) => raw,
+      buildCraftPlan: () => ({ ok: true, missing: [] }),
+      bestRecipeForInventory: (r) => r[0],
+    },
+  });
+
+  try {
+    const actions = createCraftingActions(services);
+    const r = await actions.craft({ item: 'oak_planks', count: 4 });
+    assertContract(r);
+    assert.equal(r.ok, true);
+    assert.equal(r.data.recipe_used.fallback, 'papermcp_server_side');
+    assert.equal(r.data.recipe_used.requires_table, false);
+  } finally {
+    __testOnly_resetExecuteServerCommand();
+    if (origToken === undefined) delete process.env.PAPERMCP_TOKEN;
+    else process.env.PAPERMCP_TOKEN = origToken;
+    loadConfig(); // re-cache without the test token so later tests see clean config
+  }
 });
 
 // ── craft_diag: the four failure_origins, intermediate vs desync classification ──

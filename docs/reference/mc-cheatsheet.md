@@ -158,9 +158,9 @@ Working set for most cards; full usage on each line.
 ### building
 
 - `mc blueprint show|cell|layer|materials|verify|adopt|capture <target> [flags]` — Blueprint library: show, cell, layer, materials, verify, adopt, capture
-- `mc check` — Dry-run region policy for dig/place
 - `mc place_named_sign X Y Z "TEXT" [--variant oak_sign] [--back]` (place_sign) — Place a sign at X Y Z and write text in one call. Default variant oak_sign; use --variant <wood>_sign for other woods. --back writes back face (1.20+). Read-back verifies; SIGN_WAX_PROTECTED if the server rejects (waxed sign). Pair with mc poi_add --sign X Y Z.
 - `mc place_torch X Y Z [--prefer floor|wall|auto]` — Place a torch at X Y Z, auto-picking floor (minecraft:torch) vs wall (minecraft:wall_torch) based on adjacent solid faces. --prefer floor|wall|auto (default auto). Pairs with mc poi_add for marking nav waypoints.
+- `mc region_check` (check) — Dry-run region policy for dig/place
 
 ### craft
 
@@ -240,8 +240,8 @@ Rarely needed; use `mc <command> --help` for args and examples.
 
 ### building
 
+- `blueprint_repair` (repair) — Repair region to blueprint or edit-log target
 - `construct` — Guided construct from region blueprint (Phase 2c)
-- `repair` — Repair region to blueprint or edit-log target
 
 ### combat
 

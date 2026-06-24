@@ -89,16 +89,20 @@ function resolveCtx(deps, body) {
 export function createBlueprintActions(deps) {
   const { ctx, config, ensureBot } = deps;
 
-  return {
+  // Closure ref instead of `this`: the dispatcher invokes `blueprint(body)`
+  // detached, so `this` is undefined and `this.blueprint_verify(...)` threw
+  // "Cannot read properties of undefined (reading 'blueprint_verify')"
+  // (gv2-2026-06-24-6). Reference `api.*`.
+  const api = {
     async blueprint(body) {
       const sub = String(body.subcommand || body.op || '').toLowerCase();
-      if (sub === 'show') return this.blueprint_show(body);
-      if (sub === 'cell') return this.blueprint_cell(body);
-      if (sub === 'layer') return this.blueprint_layer(body);
-      if (sub === 'materials') return this.blueprint_materials(body);
-      if (sub === 'verify') return this.blueprint_verify(body);
-      if (sub === 'adopt') return this.blueprint_adopt(body);
-      if (sub === 'capture') return this.blueprint_capture(body);
+      if (sub === 'show') return api.blueprint_show(body);
+      if (sub === 'cell') return api.blueprint_cell(body);
+      if (sub === 'layer') return api.blueprint_layer(body);
+      if (sub === 'materials') return api.blueprint_materials(body);
+      if (sub === 'verify') return api.blueprint_verify(body);
+      if (sub === 'adopt') return api.blueprint_adopt(body);
+      if (sub === 'capture') return api.blueprint_capture(body);
       return fail('INVALID_ARGS', `Unknown blueprint subcommand: ${sub}`, { retry_safe: false });
     },
 
@@ -363,9 +367,9 @@ export function createBlueprintActions(deps) {
       });
     },
 
-    async repair(body) {
-      if (body.target || body.plan_id || body.region) {
-        const r = resolveCtx(deps, body);
+    async blueprint_repair(args) {
+      if (args.target || args.plan_id || args.region) {
+        const r = resolveCtx(deps, args);
         if (r.err) return r.err;
         return fail('NOT_IMPLEMENTED', 'Blueprint-aware mc repair ships after regions Phase 2c', {
           retry_safe: false,
@@ -375,4 +379,5 @@ export function createBlueprintActions(deps) {
       return fail('NOT_IMPLEMENTED', 'mc repair not implemented', { retry_safe: false });
     },
   };
+  return api;
 }

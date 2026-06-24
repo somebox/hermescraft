@@ -190,7 +190,7 @@ export function createMarksActions(deps) {
       if (!locs[name]) return ok({ result: `No location '${name}'` });
       const l = locs[name];
       const b = ensureBot();
-      const navigateToTarget = services?.getActions?.()?.navigateToTarget;
+      const navigateToTarget = services?.getActions?.()?._navigateToTarget;
       if (config?.behaviors?.navMoveResolve === true && typeof navigateToTarget === 'function') {
         const nav = await navigateToTarget({ x: l.x, y: l.y, z: l.z, near: 2, mark: name });
         if (!nav?.ok) return nav;

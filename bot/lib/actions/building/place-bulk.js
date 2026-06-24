@@ -6,7 +6,7 @@ import { shouldSkipPlaceAt, shouldSkipDigAt, createRegionSkipTracker } from '../
 import { fail, ok } from '../../shared/action-contract.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
 import { box6, itemName, bool } from '../_args.js';
-import { withYBoth, parseYInput, normalizeBoxYArgs } from '../../runtime/coordinates.js';
+import { withYBoth, parseYInput, normalizeBoxYArgs, normalizeInclusiveBox6 } from '../../runtime/coordinates.js';
 import { orderCells, runCells, cellId } from '../../runtime/execution-kernel/index.js';
 import {
   constructScopingEnabled,
@@ -42,9 +42,13 @@ export function createBuildingPlaceBulkPart(deps) {
       const hollow = bool(args.hollow, false);
       const overwrite = bool(args.overwrite, false);
       const b = ensureBot();
-      const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
-      const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
-      const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+      const { min, max } = normalizeInclusiveBox6({ x1, y1, z1, x2, y2, z2 });
+      const minX = min.x;
+      const maxX = max.x;
+      const minY = min.y;
+      const maxY = max.y;
+      const minZ = min.z;
+      const maxZ = max.z;
       const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
 
       let positions = [];
@@ -649,12 +653,13 @@ export function createBuildingPlaceBulkPart(deps) {
         boxArgs[k] = n;
       }
 
-      const minX = Math.min(boxArgs.x1, boxArgs.x2);
-      const maxX = Math.max(boxArgs.x1, boxArgs.x2);
-      const minY = Math.min(boxArgs.y1, boxArgs.y2);
-      const maxY = Math.max(boxArgs.y1, boxArgs.y2);
-      const minZ = Math.min(boxArgs.z1, boxArgs.z2);
-      const maxZ = Math.max(boxArgs.z1, boxArgs.z2);
+      const { min, max } = normalizeInclusiveBox6(boxArgs);
+      const minX = min.x;
+      const maxX = max.x;
+      const minY = min.y;
+      const maxY = max.y;
+      const minZ = min.z;
+      const maxZ = max.z;
 
       if (minY === maxY) {
         return {

@@ -21,7 +21,7 @@ test('check does not call bot.dig or mutate dig failure log', async () => {
     config: { behaviors: { regionsEnabled: true } },
     ensureBot: () => bot,
   });
-  const r = await check.check({ verb: 'dig', x: 1, y: 64, z: 1 });
+  const r = await check.region_check({ verb: 'dig', x: 1, y: 64, z: 1 });
   assertContract(r);
   assert.equal(dug, false);
   assert.equal(ctx.runtime.recentDigFailures.length, 0);
@@ -46,7 +46,7 @@ test('check returns ENFORCEMENT_DISABLED when regionsEnabled is false', async ()
     config: { behaviors: { regionsEnabled: false } },
     ensureBot: () => bot,
   });
-  const r = await check.check({ verb: 'dig', x: 0, y: 64, z: 0 });
+  const r = await check.region_check({ verb: 'dig', x: 0, y: 64, z: 0 });
   assertContract(r);
   assert.equal(r.data.region_decision.reason, 'ENFORCEMENT_DISABLED');
   assert.equal(r.data.enforcement, false);

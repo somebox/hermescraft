@@ -28,7 +28,7 @@ test('check dig is side-effect free and matches resolver', async () => {
     config: { behaviors: { regionsEnabled: true } },
     ensureBot: () => bot,
   });
-  const preview = await check.check({ verb: 'dig', x: 0, y: 64, z: 0 });
+  const preview = await check.region_check({ verb: 'dig', x: 0, y: 64, z: 0 });
   assertContract(preview);
   assert.equal(preview.data.dry_run, true);
   assert.equal(preview.data.region_decision.decision, 'deny');
@@ -62,7 +62,7 @@ test('mc dig matches check parity inside protect region', async () => {
     hasLineOfSight: () => true,
     eyePosition: () => ({ x: 0, y: 0, z: 0 }),
   });
-  const prev = await check.check({ verb: 'dig', x: 0, y: 64, z: 0 });
+  const prev = await check.region_check({ verb: 'dig', x: 0, y: 64, z: 0 });
   const dig = await digHandlers.dig({ x: 0, y: 64, z: 0 });
   assert.equal(dig.ok, false);
   assert.equal(dig.error.code, 'REGION_PROTECTED');

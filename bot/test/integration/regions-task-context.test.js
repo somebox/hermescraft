@@ -55,13 +55,13 @@ test('worksite grant allows dig inside protect region; clear restores deny', asy
     expires_at: Date.now() + 60_000,
     source: 'test',
   };
-  const prevAllow = await check.check({ verb: 'dig', x: 0, y: 64, z: 0 });
+  const prevAllow = await check.region_check({ verb: 'dig', x: 0, y: 64, z: 0 });
   assert.equal(prevAllow.data.region_decision.reason, 'WORKSITE_GRANT');
   const digAllow = await dig.dig({ x: 0, y: 64, z: 0 });
   assert.equal(digAllow.ok, true);
 
   ctx.runtime.taskContext = null;
-  const prevDeny = await check.check({ verb: 'dig', x: 0, y: 64, z: 0 });
+  const prevDeny = await check.region_check({ verb: 'dig', x: 0, y: 64, z: 0 });
   assert.equal(prevDeny.data.region_decision.reason, 'REGION_PROTECTED');
   const digDeny = await dig.dig({ x: 0, y: 64, z: 0 });
   assert.equal(digDeny.ok, false);
@@ -90,7 +90,7 @@ test('worksite grant denies dig of structural blocks (planks/logs/fences)', asyn
     expires_at: Date.now() + 60_000,
     source: 'test',
   };
-  const checkResult = await check.check({ verb: 'dig', x: 0, y: 64, z: 0 });
+  const checkResult = await check.region_check({ verb: 'dig', x: 0, y: 64, z: 0 });
   assert.equal(checkResult.data.region_decision.reason, 'REGION_STRUCTURAL_BLOCK');
   const digResult = await dig.dig({ x: 0, y: 64, z: 0 });
   assert.equal(digResult.ok, false);
@@ -117,7 +117,7 @@ test('expired task context behaves like no worksite', async () => {
   });
   const config = { behaviors: { regionsEnabled: true } };
   const check = createRegionsCheckActions({ ctx, config, ensureBot: () => bot });
-  const r = await check.check({ verb: 'dig', x: 0, y: 64, z: 0 });
+  const r = await check.region_check({ verb: 'dig', x: 0, y: 64, z: 0 });
   assertContract(r);
   assert.equal(r.data.worksite, null);
   assert.equal(r.data.region_decision.reason, 'REGION_PROTECTED');
@@ -135,7 +135,7 @@ test('check reports ENFORCEMENT_DISABLED when regions disabled', async () => {
     config: { behaviors: { regionsEnabled: false } },
     ensureBot: () => bot,
   });
-  const r = await check.check({ verb: 'dig', x: 0, y: 64, z: 0 });
+  const r = await check.region_check({ verb: 'dig', x: 0, y: 64, z: 0 });
   assert.equal(r.data.region_decision.reason, 'ENFORCEMENT_DISABLED');
   assert.equal(r.data.enforcement, false);
 });

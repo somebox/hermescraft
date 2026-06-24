@@ -5,6 +5,7 @@ import { shouldSkipDigAt, shouldSkipPlaceAt } from '../../runtime/regions/policy
 import { cardinalDelta } from '../_directions.js';
 import { pathfindGotoNear, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
 import { fail } from '../../shared/action-contract.js';
+import { bool } from '../_args.js';
 import { parseYInput, withYBoth } from '../../runtime/coordinates.js';
 import {
   constructScopingEnabled,
@@ -669,12 +670,12 @@ export function createBuildingTerrainPart(deps) {
       if (!['median', 'min', 'max'].includes(pickMode)) {
         return { ok: false, error: { code: 'INVALID_VALUE', message: `mc level_ground --mode must be median|min|max (got ${mode})`, retry_safe: false } };
       }
-      const doExecute = execute === true || execute === 'true' || execute === '1';
+      const doExecute = bool(execute, false);
       // Foliage-aware survey: when set, columnTopSolid skips *_leaves and
       // snow_layer. Default true (proc-nav-1781079999) — every production
       // caller wants ground Y, not canopy Y. Pass exclude_foliage=false to
       // include leaves as topY (rare — canopy-inspection callers only).
-      const excludeFoliage = exclude_foliage !== false && exclude_foliage !== 'false' && exclude_foliage !== '0' && exclude_foliage !== 0;
+      const excludeFoliage = bool(exclude_foliage, true);
 
       // Phase 1 — survey
       /** @type {{ x: number, z: number, top_y: number | null, block: string | null }[]} */

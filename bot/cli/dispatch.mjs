@@ -913,6 +913,7 @@ function customParse(canonicalName, positional) {
       if (q.length < 3) throw new Error('missing_coords: mc reach X Y Z | mc reach @mark');
       return { x: Number(q[0]), y: Number(q[1]), z: Number(q[2]) };
     }
+    case 'region_check':
     case 'check': {
       const verb = String(positional[0] || '').toLowerCase();
       if (verb === 'dig') {
@@ -962,6 +963,7 @@ function customParse(canonicalName, positional) {
       return body;
     }
     case 'construct':
+    case 'blueprint_repair':
     case 'repair': {
       const q = positional.slice();
       let op = 'begin';

@@ -11,6 +11,7 @@
 
 import { losStanceGoal, tryLosStance } from './movement/_los-stand.js';
 import { canSeeBlockFaces } from './_los.js';
+import { fail } from '../shared/action-contract.js';
 
 
 /** Marker error class so callers can distinguish timeout from inner errors. */
@@ -79,15 +80,11 @@ export function raceWithTimeout(promise, capMs, opName) {
 export function timeoutError(opName, capMs, observedState = {}, hint = '') {
   const base = `${opName} exceeded ${capMs}ms wallclock cap — operation was canceled.`;
   const message = hint ? `${base} ${hint}` : base;
-  return {
-    ok: false,
-    error: {
-      code: 'OPERATION_TIMEOUT',
-      message,
-      observed_state: { op: opName, cap_ms: capMs, ...observedState },
-      retry_safe: true,
-    },
-  };
+  return fail('OPERATION_TIMEOUT', message, {
+    retry_safe: true,
+    observed_state: { op: opName, cap_ms: capMs, ...observedState },
+    ...(hint ? { next_action_hint: hint } : {}),
+  });
 }
 
 

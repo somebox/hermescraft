@@ -52,6 +52,11 @@ function buildRegistry(handlers) {
 
 const noopBrief = () => ({ new_chat: [] });
 
+function transportErrMsg(r) {
+  if (typeof r.error === 'string') return r.error;
+  return r.error?.message || '';
+}
+
 function baseOpts(actionRegistry, briefState = noopBrief) {
   return {
     actionRegistry,
@@ -69,7 +74,7 @@ test('returns 400 on unknown action in sync mode', async () => {
   const r = await dispatchAction(services, 'nope', {}, { mode: 'sync', ...baseOpts(reg) });
   assert.equal(r.ok, false);
   assert.equal(r.status, 400);
-  assert.match(r.error, /Unknown action/);
+  assert.match(transportErrMsg(r), /Unknown action/);
 });
 
 test('returns 400 on unknown action in task mode', async () => {
@@ -163,7 +168,7 @@ test('sync: returns 409 when another sync action is already running', async () =
   const r = await dispatchAction(services, 'move', {}, { mode: 'sync', ...baseOpts(reg) });
   assert.equal(r.ok, false);
   assert.equal(r.status, 409);
-  assert.match(r.error, /sync action "dig" is already running/i);
+  assert.match(transportErrMsg(r), /sync action "dig" is already running/i);
 });
 
 test('sync: returns 409 when a task is already running', async () => {
@@ -173,7 +178,7 @@ test('sync: returns 409 when a task is already running', async () => {
   const r = await dispatchAction(services, 'move', {}, { mode: 'sync', ...baseOpts(reg) });
   assert.equal(r.ok, false);
   assert.equal(r.status, 409);
-  assert.match(r.error, /Task "fell_tree" is already running/i);
+  assert.match(transportErrMsg(r), /Task "fell_tree" is already running/i);
 });
 
 // ── Task mode ────────────────────────────────────────────────────────────
@@ -209,7 +214,7 @@ test('task: returns 409 conflict when a task is already running', async () => {
   const r = await dispatchAction(services, 'act', {}, { mode: 'task', ...baseOpts(reg) });
   assert.equal(r.ok, false);
   assert.equal(r.status, 409);
-  assert.match(r.error, /already running/i);
+  assert.match(transportErrMsg(r), /already running/i);
 });
 
 test('task: returns 409 conflict when a sync action is already running', async () => {
@@ -221,7 +226,7 @@ test('task: returns 409 conflict when a sync action is already running', async (
   const r = await dispatchAction(services, 'act', {}, { mode: 'task', ...baseOpts(reg) });
   assert.equal(r.ok, false);
   assert.equal(r.status, 409);
-  assert.match(r.error, /sync action "move" is already running/i);
+  assert.match(transportErrMsg(r), /sync action "move" is already running/i);
 });
 
 // ── pushAction / recordActionOutcome / recordLastApiError ───────────────

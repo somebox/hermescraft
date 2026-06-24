@@ -43,21 +43,21 @@ export function createVerifyActions(services) {
      *   { kind: "region_blocks",
      *     corner1: {x,y,z}, corner2: {x,y,z}, block: "farmland", min_count: 81 }
      */
-    async verify(body) {
-      const kind = String(body?.kind || '').toLowerCase();
+    async verify(args) {
+      const kind = String(args?.kind || '').toLowerCase();
       if (!kind) {
         return fail('MISSING_ARG', 'mc verify requires a kind', { retry_safe: false });
       }
 
       switch (kind) {
         case 'inventory_contains':
-          return verifyInventoryContains(ensureBot, body);
+          return verifyInventoryContains(ensureBot, args);
         case 'chest_contains':
-          return verifyChestContains(ensureBot, services, body);
+          return verifyChestContains(ensureBot, services, args);
         case 'at_mark':
-          return verifyAtMark(ensureBot, services, body);
+          return verifyAtMark(ensureBot, services, args);
         case 'region_blocks':
-          return verifyRegionBlocks(ensureBot, body);
+          return verifyRegionBlocks(ensureBot, args);
         default:
           return fail(
             'UNKNOWN_KIND',
@@ -117,7 +117,7 @@ async function verifyChestContains(ensureBot, services, body) {
   }
   const all = locations.load() || {};
   const m = all[mark];
-  if (!m || typeof m.x !== 'number') {
+  if (!m || typeof m.x !== 'number' || typeof m.y !== 'number' || typeof m.z !== 'number') {
     return fail(
       'MARK_NOT_FOUND',
       `mark '${mark}' not found via /marks`,
@@ -237,7 +237,7 @@ function verifyAtMark(ensureBot, services, body) {
   }
   const all = locations.load() || {};
   const m = all[mark];
-  if (!m || typeof m.x !== 'number') {
+  if (!m || typeof m.x !== 'number' || typeof m.y !== 'number' || typeof m.z !== 'number') {
     return fail(
       'MARK_NOT_FOUND',
       `mark '${mark}' not found via /marks`,
@@ -290,7 +290,7 @@ function verifyAtMark(ensureBot, services, body) {
     const f = parseFromPoint(body.from);
     if (!f) {
       return fail(
-        'INVALID_ARG',
+        'INVALID_ARGS',
         "verify at_mark: 'from' must be X,Y,Z (e.g. from=100,64,-200)",
         { observed_state: { from: body.from }, retry_safe: false }
       );
@@ -339,7 +339,7 @@ function parseFromPoint(raw) {
 // Count blocks of a specified kind inside an axis-aligned box. Used to
 // verify tilled grids, planted crop coverage, wall fills, etc.
 //
-// Body: { kind: 'region_blocks', corner1: {x,y,z}, corner2: {x,y,z},
+// Args: { kind: 'region_blocks', corner1: {x,y,z}, corner2: {x,y,z},
 //         block: 'farmland', min_count: 81 }
 //
 // Returns satisfied iff observed >= min_count. Reports `scanned`
@@ -347,17 +347,26 @@ function parseFromPoint(raw) {
 // returned null — usually unloaded chunks). If every cell is unreadable
 // we return READ_FAILED rather than satisfied=false; otherwise we
 // trust the partial scan and report the observed count.
-function verifyRegionBlocks(ensureBot, body) {
-  const c1 = body?.corner1;
-  const c2 = body?.corner2;
-  if (!c1 || !c2 || typeof c1.x !== 'number' || typeof c2.x !== 'number') {
+function verifyRegionBlocks(ensureBot, args) {
+  const c1 = args?.corner1;
+  const c2 = args?.corner2;
+  if (!c1 || !c2) {
     return fail(
       'MISSING_ARG',
       "verify region_blocks requires 'corner1' and 'corner2' coordinates",
       { retry_safe: false }
     );
   }
-  const block = String(body?.block || '').trim();
+  const cx1 = Number(c1.x), cy1 = Number(c1.y), cz1 = Number(c1.z);
+  const cx2 = Number(c2.x), cy2 = Number(c2.y), cz2 = Number(c2.z);
+  if (![cx1, cy1, cz1, cx2, cy2, cz2].every(Number.isFinite)) {
+    return fail(
+      'INVALID_ARGS',
+      "verify region_blocks corner1 and corner2 must each have numeric x, y, z",
+      { observed_state: { corner1: c1, corner2: c2 }, retry_safe: false }
+    );
+  }
+  const block = String(args?.block || '').trim();
   if (!block) {
     return fail(
       'MISSING_ARG',
@@ -365,12 +374,15 @@ function verifyRegionBlocks(ensureBot, body) {
       { retry_safe: false }
     );
   }
-  const minRaw = Number(body?.min_count);
+  const minRaw = Number(args?.min_count);
   const minCount = Number.isFinite(minRaw) ? Math.max(0, minRaw) : 1;
 
-  const xMin = Math.min(c1.x, c2.x), xMax = Math.max(c1.x, c2.x);
-  const yMin = Math.min(c1.y, c2.y), yMax = Math.max(c1.y, c2.y);
-  const zMin = Math.min(c1.z, c2.z), zMax = Math.max(c1.z, c2.z);
+  // Floor to block integers (inclusive), then normalize order.
+  const fx1 = Math.floor(cx1), fy1 = Math.floor(cy1), fz1 = Math.floor(cz1);
+  const fx2 = Math.floor(cx2), fy2 = Math.floor(cy2), fz2 = Math.floor(cz2);
+  const xMin = Math.min(fx1, fx2), xMax = Math.max(fx1, fx2);
+  const yMin = Math.min(fy1, fy2), yMax = Math.max(fy1, fy2);
+  const zMin = Math.min(fz1, fz2), zMax = Math.max(fz1, fz2);
 
   const volume =
     (xMax - xMin + 1) * (yMax - yMin + 1) * (zMax - zMin + 1);

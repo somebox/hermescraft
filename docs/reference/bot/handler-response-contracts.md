@@ -29,6 +29,8 @@ This is the **gate**: no L1+ test can pass until the action it depends on meets 
 
 Long bulk handlers (`level`, `place_fill`, `clear_strip`, kernel-backed `dig_area`) may stop at a wallclock cap or cancel and return `error.code` **`OPERATION_TIMEOUT`** or **`CANCELLED`** with `retry_safe: true`. Shared kernel fields in `error.observed_state` (when the adapter uses [`execution-kernel`](../../architecture/execution-kernel.md)):
 
+**Spatial bounds in responses:** prefer `bounds: { x1, y1, z1, x2, y2, z2 }` (inclusive block corners, min/max normalized). Legacy `box: { xmin, xmax, … }` mirrors may still appear on older verbs; do not add new `xmin`-style fields.
+
 - `cursor.next_index`, `cursor.units_done`, `cursor.units_total`
 - `plan_hash` — stable re-run idempotency for the same geometry/command
 - Verb-specific counters remain (`columns_done`, `next_unfilled`, `placed`, `dug`, …)

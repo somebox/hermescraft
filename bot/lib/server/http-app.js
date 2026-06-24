@@ -11,6 +11,14 @@ import { planWaterRoute, _internals as _waterRouteInternals } from '../runtime/w
 import { normalizeId } from '../runtime/regions/index.js';
 import { buildRegionResolveArgs } from '../runtime/regions/policy-guard.js';
 import { getBuildInfo } from '../runtime/build-info.js';
+import { coerceBool } from '../shared/bool-coerce.js';
+
+/** @param {URLSearchParams} params @param {string} key */
+function queryFlag(params, key) {
+  const v = params.get(key);
+  if (v == null || v === '') return false;
+  return coerceBool(v, false);
+}
 import { MOVEMENTS_TUNING } from '../runtime/manager.js';
 import { sceneToolNeeds } from '../runtime/inventory-hints.js';
 import { clearNavTrail, navTrailCrumbsNewestFirst } from '../runtime/nav-trail.js';
@@ -384,7 +392,7 @@ export function createBotHttpListener(deps) {
       }
 
       if (path === '/status') {
-        const lean = url.searchParams.get('lean') === 'true';
+        const lean = queryFlag(url.searchParams, 'lean');
         // F51.2 / F58: the agent's `mc status` (GET /status) is its
         // explicit "I'm rethinking" — clear lastMoveFailed, the
         // escape-loop counter, and the stuck-cell registry so the next
@@ -394,7 +402,7 @@ export function createBotHttpListener(deps) {
         // poll, test-suite bot_trace, observability harnesses) that
         // need to read state without perturbing it. The agent never
         // sets this flag.
-        const preserve = url.searchParams.get('preserve') === 'true';
+        const preserve = queryFlag(url.searchParams, 'preserve');
         if (!preserve) {
           if (ctx.runtime.lastMoveFailed) ctx.runtime.lastMoveFailed = null;
           if (ctx.runtime.lastFailedGotoTarget) ctx.runtime.lastFailedGotoTarget = null;
@@ -682,7 +690,7 @@ export function createBotHttpListener(deps) {
 
       if (path === '/scene') {
         const range = parseInt(url.searchParams.get('range') || '16');
-        const lean = url.searchParams.get('lean') === 'true';
+        const lean = queryFlag(url.searchParams, 'lean');
         const data = buildSceneSummary({ range: Math.min(range, 24) });
         // #50: surface the compact nav_header on mc scene so the nav-brief
         // reaches workers who favor scene over mc observe. Cheap — local
@@ -726,7 +734,7 @@ export function createBotHttpListener(deps) {
 
       if (path === '/chat') {
         const count = parseInt(url.searchParams.get('count') || '20');
-        const clear = url.searchParams.get('clear') === 'true';
+        const clear = queryFlag(url.searchParams, 'clear');
         const msgs = ctx.social.chatLog.slice(-count);
         if (clear) ctx.social.chatLog.length = 0;
         return respond(res, 200, { ok: true, data: { messages: msgs } });
@@ -846,7 +854,7 @@ export function createBotHttpListener(deps) {
         // constraints, time_in_deficit_s, enabled, note). Pass ?full=true
         // to get the original shape (dashboard still uses the rich form
         // via dashboard-specific endpoints if needed).
-        const full = url.searchParams.get('full') === 'true' || url.searchParams.get('full') === '1';
+        const full = queryFlag(url.searchParams, 'full');
         const goals = full ? scored : scored.map(g => ({
           id: g.id,
           current: g.current,
@@ -885,7 +893,7 @@ export function createBotHttpListener(deps) {
 
       if (path === '/observe') {
         ensureBot();
-        const lean = url.searchParams.get('lean') === 'true';
+        const lean = queryFlag(url.searchParams, 'lean');
         logReadNavTelemetry(servicesProxy, 'observe');
         return respond(res, 200, buildObservePayload({ lean }));
       }

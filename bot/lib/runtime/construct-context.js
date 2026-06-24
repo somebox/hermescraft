@@ -20,7 +20,7 @@ import { worldInsideFootprint } from './blueprints/footprint.js';
  * @property {'construct'} kind
  * @property {string} plan_id
  * @property {string} [target]
- * @property {object} [anchor]
+ * @property {number[] | { x: number, y: number, z: number }} [anchor]
  * @property {object} [footprint]
  * @property {object} [phase]
  * @property {string[]} mutation_policy

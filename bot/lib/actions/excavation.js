@@ -5,9 +5,9 @@ import { shouldSkipDigAt, createRegionSkipTracker } from '../runtime/regions/pol
 import { createEgressTracker, clearEgressTrail } from '../runtime/egress-guard.js';
 import { ok, fail } from '../shared/action-contract.js';
 import { cardinalDelta } from './_directions.js';
-import { box6 } from './_args.js';
+import { box6, bool } from './_args.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
-import { withYBoth, parseYInput, normalizeBoxYArgs } from '../runtime/coordinates.js';
+import { withYBoth, parseYInput, normalizeBoxYArgs, normalizeInclusiveBox6 } from '../runtime/coordinates.js';
 import { buildPillarCascade } from './building/pillar.js';
 import { sampleNavTrailCrumb } from '../runtime/nav-trail.js';
 import { markBriefRefreshRequired } from '../runtime/nav-brief.js';
@@ -329,9 +329,9 @@ export function createExcavationActions(services) {
     if (vol > MAX_VOL) {
       return fail('CHAMBER_TOO_LARGE', `chamber ${w}x${hgt}x${d}=${vol} exceeds ${MAX_VOL} blocks — split into smaller chambers`, { retry_safe: false });
     }
-    const force = args.force === true || args.force === 'true';
-    const doFloor = !(args.no_floor === true || args.no_floor === 'true');
-    const doLight = !(args.no_light === true || args.no_light === 'true');
+    const force = bool(args.force, false);
+    const doFloor = !bool(args.no_floor, false);
+    const doLight = !bool(args.no_light, false);
 
     // 1) Hollow — one dig_area per y-layer strip of ≤32 cells, high-Y first.
     let dug = 0, skipped = 0, hazard = null;
@@ -375,7 +375,7 @@ export function createExcavationActions(services) {
           const shallow = below && below.boundingBox === 'block' && !/water|lava/.test(below.name);
           if (shallow && plug) {
             try {
-              const pr = await getActions().place({ name: plug, x, y: ymin - 1, z });
+              const pr = await getActions().place({ block: plug, x, y: ymin - 1, z });
               if (pr?.ok) { floor_filled++; continue; }
             } catch { /* fall through to report */ }
           }
@@ -433,12 +433,12 @@ export function createExcavationActions(services) {
     const abort_on_fail = args.abort_on_fail;
     const clear_stand = args.clear_stand;
     const safe = args.safe;
-    const doPickup = pickupRaw !== undefined ? pickupRaw : true;
-    const abortOnFail = abort_on_fail === true || abort_on_fail === 'true';
-    const clearStand = clear_stand !== false && clear_stand !== 'false';
-    const safeDig = safe !== false && safe !== 'false';
-    const force = args.force === true || args.force === 'true';
-    const forceStructural = args.force_structural === true || args.force_structural === 'true';
+    const doPickup = args.pickup === undefined ? true : bool(args.pickup, true);
+    const abortOnFail = bool(abort_on_fail, false);
+    const clearStand = bool(clear_stand, true);
+    const safeDig = bool(safe, true);
+    const force = bool(args.force, false);
+    const forceStructural = bool(args.force_structural, false);
     // Egress protection: don't carve through the bot's own stair_down treads
     // unless forced. Internal callers (stair_up) opt out via _bypassEgress;
     // tunnel slices own the trail invalidation via _internalEgress so the
@@ -448,9 +448,8 @@ export function createExcavationActions(services) {
       : createEgressTracker(ctx, { force, ownsTrail: !args._internalEgress });
 
     const b = ensureBot();
-    const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
-    const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+    const norm = normalizeInclusiveBox6(boxParsed);
+    const { min: { x: minX, y: minY, z: minZ }, max: { x: maxX, y: maxY, z: maxZ } } = norm;
     const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
     const inConstruct = constructScopingEnabled() && !!getConstructContext(ctx);
 
@@ -498,9 +497,9 @@ export function createExcavationActions(services) {
     const digHintSet = new Set();
     const regionSkips = createRegionSkipTracker();
 
-    const useKernel = args._useKernel === true || args._useKernel === 'true' || isExecKernelEnabled()
+    const useKernel = bool(args._useKernel, false) || isExecKernelEnabled()
       || (constructScopingEnabled() && !!getConstructContext(ctx));
-    const preserveOrder = args.preserveOrder === true || args.preserveOrder === 'true';
+    const preserveOrder = bool(args.preserveOrder, false) || bool(args.preserve_order, false);
 
     if (useKernel) {
       const counters = { dug: 0, skipped: 0 };
@@ -679,7 +678,7 @@ export function createExcavationActions(services) {
     force = false,
   }) {
     const b = ensureBot();
-    const forceDig = force === true || force === 'true';
+    const forceDig = bool(force, false);
     const startX = Number.isFinite(Number(x)) ? Math.floor(Number(x)) : Math.floor(b.entity.position.x);
     // Y input: y (= block_y, legacy) or surface_y (= block_y + 1). Tunnels
     // are dug at feet-level Y so the bot can walk through them.
@@ -1318,7 +1317,7 @@ export function createExcavationActions(services) {
     const b = ensureBot();
     // Cap aligned with the CLI argSchema (32) — was 64, unreachable via CLI.
     const maxSteps = Math.min(Math.max(parseInt(rawCount, 10) || 12, 1), 32);
-    const force = rawForce === true || rawForce === 'true' || rawForce === '1' || rawForce === 1;
+    const force = bool(rawForce, false);
 
     // Self-trap guard (proc-nav-1781014144): descending N blocks leaves the
     // bot at the bottom of a 1×1 shaft. If inventory can't fund pillaring

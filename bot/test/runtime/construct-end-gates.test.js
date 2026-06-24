@@ -48,7 +48,10 @@ test('gateL0Ground fails when floor cell is air', () => {
   assert.equal(loaded.ok, true);
   const anchor = loaded.plan.anchor.coords;
   const enriched = enrichPlan(loaded.plan);
-  const map = { '0,64,0': 'air' };
+  const mins = footprintMins(enriched.footprint);
+  const [lx, , lz] = [...iterateFootprintLocals(enriched.footprint)].find(([, ly]) => ly === mins.y);
+  const w = localToWorld(anchor, enriched.footprint, lx, mins.y, lz);
+  const map = { [`${w.x},${w.y},${w.z}`]: 'air' };
   const getBlockName = (x, y, z) => map[`${x},${y},${z}`] || 'cobblestone';
   const ctxPlan = { ...enriched, anchor, planId: loaded.plan.plan_id };
   const r = gateL0Ground(ctxPlan, getBlockName);
@@ -59,8 +62,13 @@ test('gateL0Ground fails when floor cell is air', () => {
 test('gateDoorTraversable fails when door gap is filled', () => {
   const loaded = loadPlanJson(dataDir, 'starter_shelter');
   const anchor = loaded.plan.anchor.coords;
+  const enriched = enrichPlan(loaded.plan);
   const { ctxPlan, getBlockName, map } = worldFromPlanCells(loaded.plan, anchor);
-  map['3,67,0'] = 'cobblestone';
+  const gaps = findPerimeterGapLocals(enriched.footprint, enriched.cellsIndex);
+  const gap = gaps.find((g) => g.face === 'min_z') || gaps[0];
+  assert.ok(gap, 'expected a perimeter door gap');
+  const w = localToWorld(anchor, enriched.footprint, gap.local[0], gap.local[1], gap.local[2]);
+  map[`${w.x},${w.y},${w.z}`] = 'cobblestone';
   const getBlock = (x, y, z) => map[`${x},${y},${z}`] || 'air';
   const r = gateDoorTraversable(ctxPlan, getBlock);
   assert.equal(r.ok, false);
@@ -69,8 +77,23 @@ test('gateDoorTraversable fails when door gap is filled', () => {
 test('gateInteriorAir fails when interior is solid-filled', () => {
   const loaded = loadPlanJson(dataDir, 'starter_shelter');
   const anchor = loaded.plan.anchor.coords;
-  const { ctxPlan, getBlockName, map } = worldFromPlanCells(loaded.plan, anchor);
-  map['3,66,3'] = 'cobblestone';
+  const enriched = enrichPlan(loaded.plan);
+  const { ctxPlan, map } = worldFromPlanCells(loaded.plan, anchor);
+  const { x, y, z } = enriched.footprint.local;
+  /** @type {{ x: number, y: number, z: number } | null} */
+  let targetW = null;
+  outer:
+  for (let ly = y[0] + 1; ly <= y[1] - 1; ly++) {
+    for (let lx = x[0] + 1; lx <= x[1] - 1; lx++) {
+      for (let lz = z[0] + 1; lz <= z[1] - 1; lz++) {
+        if (enriched.cellsIndex.get(`${lx},${ly},${lz}`)) continue;
+        targetW = localToWorld(anchor, enriched.footprint, lx, ly, lz);
+        break outer;
+      }
+    }
+  }
+  assert.ok(targetW, 'expected interior air local without planned cell');
+  map[`${targetW.x},${targetW.y},${targetW.z}`] = 'cobblestone';
   const getBlock = (x, y, z) => map[`${x},${y},${z}`] || 'air';
   const r = gateInteriorAir(ctxPlan, getBlock);
   assert.equal(r.ok, false);

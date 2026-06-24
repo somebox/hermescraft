@@ -1,5 +1,9 @@
 /**
  * Footprint helpers: tight AABB from cells, iterate cells in footprint.
+ *
+ * Local indexing: `tightFootprintFromCells` uses 0-based min/max from cell locals;
+ * `metadataFootprint` uses GrabCraft-style 1-based [1,w] ranges. Always resolve via
+ * `resolveFootprint` before `localToWorld` — see code-style-standards.md (Phase 7).
  */
 
 /** @param {Array<{ local: number[] }>} cells */

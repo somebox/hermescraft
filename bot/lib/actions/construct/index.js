@@ -22,13 +22,18 @@ export function createConstructActions(deps, blueprintFns) {
     return blueprintFns.blueprint_verify(body);
   }
 
-  return {
+  // Capture the action object in a closure so internal op-dispatch doesn't depend
+  // on `this`: the registry/dispatcher invokes `construct(body)` detached from the
+  // object, so `this` is undefined and `this.construct_show(...)` threw
+  // "Cannot read properties of undefined (reading 'construct_show')" the moment
+  // construct context went live (gv2-2026-06-24-6). Reference `api.*` instead.
+  const api = {
     async construct(body) {
       const op = String(body.subcommand || body.op || '').toLowerCase();
-      if (op === 'begin') return this.construct_begin(body);
-      if (op === 'show') return this.construct_show(body);
-      if (op === 'end') return this.construct_end(body);
-      if (!op) return this.construct_begin(body);
+      if (op === 'begin') return api.construct_begin(body);
+      if (op === 'show') return api.construct_show(body);
+      if (op === 'end') return api.construct_end(body);
+      if (!op) return api.construct_begin(body);
       return fail('INVALID_ARGS', `Unknown construct op: ${op}`, {
         retry_safe: false,
         next_action_hint: 'mc construct begin|show|end',
@@ -105,6 +110,7 @@ export function createConstructActions(deps, blueprintFns) {
       });
     },
   };
+  return api;
 }
 
 /** @param {Map<string, object>|undefined} map */
