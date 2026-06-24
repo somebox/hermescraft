@@ -964,11 +964,21 @@ function customParse(canonicalName, positional) {
     case 'construct':
     case 'repair': {
       const q = positional.slice();
-      const body = { target: q.shift() };
+      let op = 'begin';
+      if (q.length && ['begin', 'show', 'end'].includes(String(q[0]).toLowerCase())) {
+        op = String(q.shift()).toLowerCase();
+      }
+      const body = { op };
+      if (op === 'begin') {
+        const target = q.shift();
+        if (target) body.target = target;
+      }
       while (q.length) {
         const f = String(q.shift());
         if (f === '--level') body.level = Number(q.shift());
         else if (f === '--range') body.range = String(q.shift());
+        else if (f === '--skip-gates') body.skip_gates = true;
+        else if (f === '--skip-phase-gate') body.skip_phase_gate = true;
         else if (f === '--at') {
           body.x = Number(q.shift());
           body.y = Number(q.shift());

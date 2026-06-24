@@ -174,6 +174,59 @@ test('POST /task-context with missing card_id returns 400 (not 404)', async () =
   assert.equal(body.error.code, 'MISSING_CARD_ID');
 });
 
+test('POST /task-context CONSTRUCT grant returns FEATURE_DISABLED auto-begin when env off', async () => {
+  const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
+  delete process.env.HERMES_CONSTRUCT_CONTEXT;
+  try {
+    const { listener } = makeListenerWithTaskContext();
+    const req = mockReqWithBody('POST', '/task-context',
+      JSON.stringify({
+        card_id: 't_construct_off',
+        worksite_region: 'base',
+        plan: 'starter_shelter',
+        level: 1,
+        card_kind: 'CONSTRUCT',
+        source: 'test',
+      }));
+    const res = mockRes();
+    await listener(req, res);
+    assert.equal(res.statusCode, 200, res.body);
+    const body = JSON.parse(res.body);
+    const auto = body.data.construct_auto_begin;
+    assert.ok(auto);
+    assert.equal(auto.ok, false);
+    assert.equal(auto.error.code, 'FEATURE_DISABLED');
+  } finally {
+    if (prev !== undefined) process.env.HERMES_CONSTRUCT_CONTEXT = prev;
+  }
+});
+
+test('POST /task-context with construct_auto_begin false omits auto-begin payload', async () => {
+  const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
+  process.env.HERMES_CONSTRUCT_CONTEXT = '1';
+  try {
+    const { listener } = makeListenerWithTaskContext();
+    const req = mockReqWithBody('POST', '/task-context',
+      JSON.stringify({
+        card_id: 't_no_auto',
+        worksite_region: 'base',
+        plan: 'starter_shelter',
+        level: 1,
+        card_kind: 'CONSTRUCT',
+        construct_auto_begin: false,
+        source: 'test',
+      }));
+    const res = mockRes();
+    await listener(req, res);
+    assert.equal(res.statusCode, 200, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body.data.construct_auto_begin, undefined);
+  } finally {
+    if (prev === undefined) delete process.env.HERMES_CONSTRUCT_CONTEXT;
+    else process.env.HERMES_CONSTRUCT_CONTEXT = prev;
+  }
+});
+
 test('POST /task-context new card_id clears construct session (F2 lifecycle)', async () => {
   const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
   process.env.HERMES_CONSTRUCT_CONTEXT = '1';

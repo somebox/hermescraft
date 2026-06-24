@@ -7,7 +7,7 @@ import { Vec3 } from 'vec3';
 import { ok, fail } from '../shared/action-contract.js';
 import { createBlueprintActions } from '../actions/blueprints/index.js';
 import { parsePlanIdFromTarget, resolvePlanContext, loadPlanJson, enrichPlan } from './blueprints/loader.js';
-import { evaluateConstructEndGates } from './construct-end-gates.js';
+import { evaluateConstructEndGates, evaluatePhaseClean } from './construct-end-gates.js';
 import { computeMaterialsMissing } from './construct-materials.js';
 import { evaluateConstructSiteReadiness } from './construct-site-readiness.js';
 import {
@@ -382,7 +382,10 @@ export function buildGuidedEditProgress(ctx) {
 export function runConstructEndGateCheck(deps, session, body = {}) {
   if (!constructScopingEnabled()) return { ok: true };
   const skipGates = body.skip_gates === true || body.skip_gates === 'true';
-  if (skipGates) return { ok: true };
+  const skipPhase = body.skip_phase_gate === true || body.skip_phase_gate === 'true';
+  if (skipGates && skipPhase) {
+    return { ok: true };
+  }
 
   const ctx = deps.ctx;
   const dataDir = dataDirFromCtx(ctx);
@@ -418,13 +421,31 @@ export function runConstructEndGateCheck(deps, session, body = {}) {
   const ctxPlan = { ...enriched, anchor, planId: session.plan_id };
   const b = deps.ensureBot();
   const getBlockName = (x, y, z) => b.blockAt(new Vec3(x, y, z))?.name || 'air';
-  const skipPhase = body.skip_phase_gate === true || body.skip_phase_gate === 'true';
+
+  if (!skipPhase) {
+    const phaseCheck = evaluatePhaseClean(ctxPlan, getBlockName, session.phase);
+    if (!phaseCheck.clean) {
+      return {
+        ok: false,
+        response: fail('GATE_FAIL', phaseCheck.message || 'Phase not clean', {
+          retry_safe: true,
+          next_action_hint: 'mc construct show — fix workset cells, then mc construct end',
+          observed_state: { verify_summary: phaseCheck.verify?.summary },
+        }),
+      };
+    }
+  }
+
+  if (skipGates) {
+    return { ok: true };
+  }
+
   const gateOut = evaluateConstructEndGates({
     ctxPlan,
     getBlockName,
     gates: loaded.plan.gates || [],
     phase: session.phase,
-    requirePhaseClean: !skipPhase,
+    requirePhaseClean: false,
   });
   if (!gateOut.ok) {
     const msg = gateOut.failures.map((f) => f.message).filter(Boolean).join('; ')

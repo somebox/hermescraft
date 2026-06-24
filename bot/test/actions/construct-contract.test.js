@@ -4,6 +4,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { createBlueprintActions } from '../../lib/actions/blueprints/index.js';
 import { createConstructActions } from '../../lib/actions/construct/index.js';
@@ -11,12 +13,17 @@ import { createMockServices } from '../../lib/server/mock-services.js';
 import { assertFailure } from '../_helpers/action-harness.js';
 import { setConstructContext, buildWorksetIndex } from '../../lib/runtime/construct-context.js';
 
-function deps() {
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const dataDir = path.join(repoRoot, 'data');
+
+function deps(overrides = {}) {
   const services = createMockServices({
     ensureBot: () => ({
       entity: { position: { x: 0, y: 64, z: 0 } },
       blockAt: () => ({ name: 'air', boundingBox: 'empty' }),
     }),
+    state: { runtime: { dataDir } },
+    ...overrides,
   });
   return {
     ctx: services.state,
@@ -25,17 +32,59 @@ function deps() {
   };
 }
 
-function constructActions() {
-  const d = deps();
+function constructActions(overrides = {}) {
+  const d = deps(overrides);
   const bp = createBlueprintActions(d);
-  return createConstructActions(d, bp);
+  return { actions: createConstructActions(d, bp), ...d };
 }
+
+test('construct begin: PLAN_REVISION_MISMATCH when card revision stale', async () => {
+  const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
+  process.env.HERMES_CONSTRUCT_CONTEXT = '1';
+  try {
+    const { actions } = constructActions();
+    const r = await actions.construct_begin({
+      target: 'starter_shelter',
+      level: 1,
+      plan_revision: 'starter_shelter-v0-stale',
+      skip_readiness: true,
+      skip_anchor_gate: true,
+    });
+    assertFailure(r, { code: 'PLAN_REVISION_MISMATCH', retrySafe: false });
+  } finally {
+    if (prev === undefined) delete process.env.HERMES_CONSTRUCT_CONTEXT;
+    else process.env.HERMES_CONSTRUCT_CONTEXT = prev;
+  }
+});
+
+test('construct begin: CONSTRUCT_PREP_REQUIRED when L1 site is water', async () => {
+  const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
+  process.env.HERMES_CONSTRUCT_CONTEXT = '1';
+  try {
+    const { actions } = constructActions({
+      ensureBot: () => ({
+        entity: { position: { x: 0, y: 64, z: 0 } },
+        blockAt: () => ({ name: 'water', boundingBox: 'empty' }),
+      }),
+    });
+    const r = await actions.construct_begin({
+      target: 'starter_shelter',
+      level: 1,
+      skip_anchor_gate: true,
+    });
+    assertFailure(r, { code: 'CONSTRUCT_PREP_REQUIRED', retrySafe: false });
+    assert.equal(r.error.observed_state?.site_readiness?.status, 'prep_required');
+  } finally {
+    if (prev === undefined) delete process.env.HERMES_CONSTRUCT_CONTEXT;
+    else process.env.HERMES_CONSTRUCT_CONTEXT = prev;
+  }
+});
 
 test('construct begin: FEATURE_DISABLED when env off', async () => {
   const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
   delete process.env.HERMES_CONSTRUCT_CONTEXT;
   try {
-    const actions = constructActions();
+    const { actions } = constructActions();
     const r = await actions.construct_begin({});
     assertFailure(r, { code: 'FEATURE_DISABLED', retrySafe: false });
     assert.match(r.error.next_action_hint, /blueprint verify/i);
@@ -45,7 +94,7 @@ test('construct begin: FEATURE_DISABLED when env off', async () => {
 });
 
 test('construct end: NOT_IN_CONSTRUCT when idle', async () => {
-  const actions = constructActions();
+  const { actions } = constructActions();
   const r = await actions.construct_end({});
   assertFailure(r, { code: 'NOT_IN_CONSTRUCT', retrySafe: true });
 });
@@ -71,7 +120,7 @@ test('construct end: clears session and workset', async () => {
     ctx.runtime._constructWorkset = buildWorksetIndex([
       { x: 1, y: 64, z: 1, category: 'missing' },
     ]);
-    const r = await actions.construct_end({ skip_gates: true });
+    const r = await actions.construct_end({ skip_gates: true, skip_phase_gate: true });
     assert.equal(r.ok, true);
     assert.equal(ctx.runtime.construct_context, null);
     assert.equal(ctx.runtime._constructWorkset, undefined);
