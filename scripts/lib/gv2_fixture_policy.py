@@ -10,7 +10,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from scripts.lib.gv2_schematic_shelter import footprint_min_from_base_anchor
+from scripts.lib.gv2_schematic_shelter import (
+    footprint_min_from_base_anchor,
+    staging_depot_candidate_coords,
+)
 
 # Mirrors bot/lib/runtime/blueprints/compare.js FIXTURE_NAMES (structural blocks excluded).
 _FIXTURE_BLOCK_RE = re.compile(
@@ -73,50 +76,85 @@ def audit_starter_shelter_fixtures(
     *,
     base_snapshot: dict | None = None,
 ) -> dict[str, Any]:
-    """Compare shared marks and optional snapshot blocks to the depot policy."""
+    """Compare shared marks and optional snapshot blocks to the depot policy.
+
+    Findings are TIERED (a functional 1-block shift must not read like a chest in a wall):
+      - blocked: wrong level (y), far drift, non-chest where a chest is expected, a
+        fixture in a wall/perimeter cell, or fixtures placed before L4_roof closes.
+      - warn:    a cosmetic in-interior shift, a not-yet-placed depot mark, or a reachable
+        non-canonical interior fixture once the shell is up.
+    ``ok`` fails only on a BLOCKED finding (the pilot gate trips on real problems, not
+    cosmetic drift). The staging depot at spawn is excluded by construction."""
+    base = {"present": True, "ok": True, "violations": [], "warnings": [], "findings": []}
     if not _schematic_context(run_root):
-        return {"present": False, "ok": True, "violations": [], "expected": {}}
+        return {**base, "present": False, "expected": {}}
 
     loc = locations or {}
     cfg = _load_json(run_root / "config.json") or {}
     anchor_mark = loc.get("base_anchor") if isinstance(loc.get("base_anchor"), dict) else None
     if not anchor_mark:
-        return {"present": True, "ok": False, "violations": ["no base_anchor mark"], "expected": {}}
+        return {**base, "ok": False, "violations": ["no base_anchor mark"],
+                "findings": [{"severity": "blocked", "detail": "no base_anchor mark"}],
+                "expected": {}}
 
-    base_anchor = {
-        "x": int(anchor_mark["x"]),
-        "y": int(anchor_mark["y"]),
-        "z": int(anchor_mark["z"]),
-    }
+    ax, ay, az = int(anchor_mark["x"]), int(anchor_mark["y"]), int(anchor_mark["z"])
+    base_anchor = {"x": ax, "y": ay, "z": az}
     expected = expected_chest_depot_coords(base_anchor)
-    violations: list[str] = []
+    findings: list[dict[str, str]] = []
 
+    def add(severity: str, detail: str) -> None:
+        findings.append({"severity": severity, "detail": detail})
+
+    chest_y = ay + 1                 # slab surface (where base chests sit)
+    fmin, fmax_x, fmax_z = ax - 3, ax + 3, az + 3  # 7×7 footprint edges (= walls)
+    fmin_z = az - 3
+
+    def _interior_slab(x: int, y: int, z: int) -> bool:
+        return (y == chest_y and (ax - 2) <= x <= (ax + 2) and (az - 2) <= z <= (az + 2))
+
+    # Staging depot lives at spawn and MUST clear the shelter footprint. If its candidate
+    # cell falls inside the footprint, that is the overlap the depot lifecycle forbids —
+    # flag it (do NOT silently skip it, which would mask a real chest-in-footprint).
+    spawn = cfg.get("spawn") if isinstance(cfg.get("spawn"), dict) else None
+    if spawn:
+        sx, _sy, sz = staging_depot_candidate_coords(spawn)
+        if fmin <= sx <= fmax_x and fmin_z <= sz <= fmax_z:
+            add("blocked", f"staging depot ({sx},{sz}) overlaps shelter footprint — relocate base or depot")
+
+    # Only judge "fixtures before the shell closed" when the run actually tracks phase
+    # closure; absent tracking ⇒ give the benefit of the doubt (no premature-placement block).
+    phase_tracking = isinstance(cfg.get("construct_phase_closed"), dict)
+    l4_closed = bool((cfg.get("construct_phase_closed") or {}).get("L4_roof"))
+
+    # --- mark drift tiering ---
     for mark, (ex, ey, ez) in expected.items():
         m = loc.get(mark)
         if not isinstance(m, dict) or m.get("stale"):
-            violations.append(f"mark missing or stale: {mark}")
+            add("warn", f"mark missing or stale: {mark}")
             continue
-        if int(m["x"]) != ex or int(m["y"]) != ey or int(m["z"]) != ez:
-            violations.append(
-                f"mark {mark} drift: got ({m['x']},{m['y']},{m['z']}) expected ({ex},{ey},{ez})"
-            )
+        mx, my, mz = int(m["x"]), int(m["y"]), int(m["z"])
+        if (mx, my, mz) == (ex, ey, ez):
+            continue
+        if my != ey:
+            add("blocked", f"mark {mark} drift (wrong level): got ({mx},{my},{mz}) expected ({ex},{ey},{ez})")
+        elif abs(mx - ex) <= 1 and abs(mz - ez) <= 1 and _interior_slab(mx, my, mz):
+            add("warn", f"mark {mark} cosmetic drift: got ({mx},{my},{mz}) expected ({ex},{ey},{ez})")
+        else:
+            add("blocked", f"mark {mark} drift: got ({mx},{my},{mz}) expected ({ex},{ey},{ez})")
 
+    # --- snapshot block tiering ---
     snap = base_snapshot
     if snap is None:
         snap = _load_json(run_root / "artifacts" / "world" / "base-snapshot.json")
     if isinstance(snap, dict):
         oy = int(snap.get("origin", [0, 0, 0])[1])
-        chest_y = oy + 1
-        layer = (snap.get("layers") or {}).get(str(chest_y)) or {}
+        layer = (snap.get("layers") or {}).get(str(oy + 1)) or {}
         cells = layer.get("cells") or {}
+        allowed_cells = {(ex, ez) for ex, _, ez in expected.values()}
         for mark, (ex, ey, ez) in expected.items():
-            key = f"{ex},{ez}"
-            block = cells.get(key)
+            block = cells.get(f"{ex},{ez}")
             if block and "chest" not in _normalize_block(block):
-                violations.append(f"snapshot at {mark} cell {key}: {block} (expected chest)")
-
-        ox, oz = int(snap["origin"][0]), int(snap["origin"][2])
-        xmin, xmax, zmin, zmax = ox - 3, ox + 3, oz - 3, oz + 3
+                add("blocked", f"snapshot at {mark} cell {ex},{ez}: {block} (expected chest)")
         for key, block in cells.items():
             if not block or not is_policy_fixture_block(block):
                 continue
@@ -124,21 +162,28 @@ def audit_starter_shelter_fixtures(
                 x, z = (int(p) for p in key.split(","))
             except (ValueError, TypeError):
                 continue
-            if x < xmin or x > xmax or z < zmin or z > zmax:
-                continue
-            allowed_cells = {(ex, ez) for ex, _, ez in expected.values()}
-            if (x, z) not in allowed_cells:
-                violations.append(f"fixture {block} at ({x},{chest_y},{z}) outside depot policy cells")
+            if not (fmin <= x <= fmax_x and fmin_z <= z <= fmax_z):
+                continue                          # outside the build footprint
+            if (x, z) in allowed_cells:
+                continue                          # canonical base chest
+            if x in (fmin, fmax_x) or z in (fmin_z, fmax_z):
+                add("blocked", f"fixture {block} at ({x},{oy + 1},{z}) in a wall/perimeter cell")
+            elif phase_tracking and not l4_closed:
+                add("blocked", f"fixture {block} at ({x},{oy + 1},{z}) placed before L4_roof closed")
+            else:
+                add("warn", f"fixture {block} at ({x},{oy + 1},{z}) interior but not canonical depot")
 
-    closed = cfg.get("construct_phase_closed")
-    if isinstance(closed, dict) and any(loc.get(m) for m in ALLOWED_MARK_FIXTURES):
-        if not closed.get("L4_roof"):
-            violations.append("fixture marks set but L4_roof construct phase not closed")
+    if any(loc.get(m) for m in ALLOWED_MARK_FIXTURES) and phase_tracking and not l4_closed:
+        add("blocked", "fixture marks set but L4_roof construct phase not closed")
 
+    blocked = [f["detail"] for f in findings if f["severity"] == "blocked"]
+    warnings = [f["detail"] for f in findings if f["severity"] == "warn"]
     return {
         "present": True,
-        "ok": len(violations) == 0,
-        "violations": violations,
+        "ok": len(blocked) == 0,
+        "violations": blocked,        # back-compat: real (gate-failing) problems
+        "warnings": warnings,
+        "findings": findings,
         "expected": {k: list(v) for k, v in expected.items()},
         "allowed_marks": sorted(ALLOWED_MARK_FIXTURES),
         "allowed_after_phases": sorted(ALLOWED_AFTER_PHASES),

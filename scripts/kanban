@@ -1059,12 +1059,16 @@ def cmd_complete(args: argparse.Namespace) -> int:
             # transient DB hiccup (default-allow keeps the facade usable).
             pass
     assignee_for_construct = ""
+    construct_card_title = ""
+    construct_card_body = ""
     try:
         conn = _db()
         row = conn.execute(
-            "SELECT assignee FROM tasks WHERE id = ?", (args.task_id,)
+            "SELECT assignee, title, body FROM tasks WHERE id = ?", (args.task_id,)
         ).fetchone()
         assignee_for_construct = ((row[0] if row else None) or "").strip()
+        construct_card_title = (row[1] if row else None) or ""
+        construct_card_body = (row[2] if row else None) or ""
     except sqlite3.Error:
         assignee_for_construct = ""
     if (
@@ -1074,16 +1078,27 @@ def cmd_complete(args: argparse.Namespace) -> int:
         try:
             if str(REPO_ROOT) not in sys.path:
                 sys.path.insert(0, str(REPO_ROOT))
-            from scripts.lib.construct_kanban_guard import construct_complete_blocked_on_bot
+            from scripts.lib.construct_kanban_guard import (
+                construct_complete_blocked_on_bot,
+                schematic_construct_card_requires_phase_end,
+            )
 
-            block = construct_complete_blocked_on_bot(assignee_for_construct)
+            require_end = schematic_construct_card_requires_phase_end(
+                construct_card_title, construct_card_body
+            )
+            block = construct_complete_blocked_on_bot(
+                assignee_for_construct,
+                card_id=args.task_id,
+                require_schematic_construct_end=require_end,
+            )
         except Exception:
             block = None
         if block:
             hint = block.get("next_action_hint") or "mc construct end, then complete the card"
+            code = block.get("code", "CONSTRUCT_SESSION_ACTIVE")
             sys.stderr.write(
-                f"refused: assignee={assignee_for_construct} has active construct session "
-                f"({block.get('code', 'CONSTRUCT_SESSION_ACTIVE')}).\n"
+                f"refused: assignee={assignee_for_construct} construct completion guard "
+                f"({code}).\n"
                 f"{block.get('message', '')}\n"
                 f"Next: {hint}\n"
                 "Override (operator rescue only): KANBAN_ALLOW_COMPLETE_WITH_CONSTRUCT=1\n"

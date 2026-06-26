@@ -2,7 +2,7 @@
   "run_id": "fixture",
   "evidence_arm": "B",
   "tier": "easy",
-  "prev_run_id": "gv2-fixture-test",
+  "prev_run_id": "gv2-test",
   "next_run_id": null,
   "baseline_run_id": null,
   "same_arm_runs": [],

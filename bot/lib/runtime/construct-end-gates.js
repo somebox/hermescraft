@@ -19,8 +19,23 @@ function isPassableBlock(name) {
   return /(_door|_fence_gate|_trapdoor)$/.test(n);
 }
 
+function parsePhaseRange(raw) {
+  if (Array.isArray(raw)) return raw.map(Number);
+  if (typeof raw === 'string') {
+    const m = raw.match(/^(-?\d+)\.\.(-?\d+)$/);
+    if (m) return [Number(m[1]), Number(m[2])];
+  }
+  return undefined;
+}
+
+/** verifyPlan slice: level/range only (phase id labels do not scope verify). */
 function phaseFilter(phase) {
-  return phase && typeof phase === 'object' ? phase : {};
+  const p = phase && typeof phase === 'object' ? phase : {};
+  const out = {};
+  if (p.level != null && Number.isFinite(Number(p.level))) out.level = Number(p.level);
+  const range = parsePhaseRange(p.range);
+  if (range) out.range = range;
+  return out;
 }
 
 /**

@@ -12,7 +12,7 @@ triggers:
   - build fence
   - build farm
   - build pen
-version: 4.4.0
+version: 4.5.0
 ---
 
 # Minecraft Building — With Taste
@@ -125,8 +125,16 @@ calls on one fill failure, stop and re-read `remaining_cells`.
 3. `mc scene` / `mc observe` before bulk motor.
 4. `mc construct show` — workset, `materials_missing`, guided-edit progress.
 5. Scoped `mc fill` / `mc place` / `mc dig` (workset slices only; no `mc wall` in footprint).
-6. `mc blueprint verify` for the phase slice; then `mc construct end` (final phase: gates on).
-7. `mc bot release` — do not `kanban_complete` while `construct_complete_blocked` is set.
+6. `mc blueprint verify` for the **same slice** as on the card (`--level` / `--range`); then `mc construct end` (non-final: `--skip-gates` still runs **phase-clean** on that slice). **Slice verify alone is not card done** if `construct end` fails.
+7. `mc bot release` — do not `kanban_complete` while `construct_complete_blocked` is set. Do not `task_context clear` to “finish” without a successful **`construct end`** on the phase slice (see [`docs/architecture/construct-canary.md`](../docs/architecture/construct-canary.md)).
+
+**Phase scope:** Card body `phase: L3_walls` is a label; **`--level` / `--range` on `task_context set`** define the verify/end slice. `mc construct show` must match that slice after runtime phase binding (S2). Materials come from plan **`materials_by_phase`** for that phase key (L3 walls: **`oak_log`** per [`adr-schematic-gate-material.md`](../docs/architecture/adr-schematic-gate-material.md)).
+
+**Fixtures (starter_shelter):** Chests `chest_wood` / `chest_food` sit on the **L1 slab
+surface** inside the shell (interior column, y = feet+1), not embedded in the cobble
+floor. Crafting table / furnace are post-shell cards. Construct-end tolerates fixture
+blocks in interior air ([`adr-schematic-gate-fixtures.md`](../docs/architecture/adr-schematic-gate-fixtures.md)).
+Door: keep the plan air gap on `min_z` ([`adr-schematic-gate-door.md`](../docs/architecture/adr-schematic-gate-door.md)).
 
 **L0_ground** (no plan cells at dy=0): card may omit `task_context --card-kind CONSTRUCT`; level/drain the footprint per `ground_prep:` on the card, then verify + `construct end`.
 

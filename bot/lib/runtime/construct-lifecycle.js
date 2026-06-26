@@ -45,12 +45,28 @@ export function clearConstructSession(ctx) {
 export function constructCompletionBlockedReason(ctx) {
   if (!constructScopingEnabled()) return null;
   const session = getConstructContext(ctx);
-  if (!session) return null;
-  return {
-    code: 'CONSTRUCT_SESSION_ACTIVE',
-    message: `Construct session still active for plan ${session.plan_id}`,
-    next_action_hint: 'mc construct show — fix workset; mc construct end when phase clean, then complete the card',
-  };
+  if (session) {
+    return {
+      code: 'CONSTRUCT_SESSION_ACTIVE',
+      message: `Construct session still active for plan ${session.plan_id}`,
+      next_action_hint: 'mc construct show — fix workset; mc construct end when phase clean, then complete the card',
+    };
+  }
+  const tc = ctx.runtime?.taskContext;
+  if (tc?.card_kind === 'CONSTRUCT' && !getConstructPhaseClosure(ctx)) {
+    return {
+      code: 'CONSTRUCT_PHASE_NOT_CLOSED',
+      message: 'CONSTRUCT card requires successful mc construct end on the phase slice before kanban complete',
+      next_action_hint: 'mc construct show; fix slice; mc construct end (not only blueprint verify); then complete',
+    };
+  }
+  return null;
+}
+
+export function getConstructPhaseClosure(ctx) {
+  return ctx?.runtime?.lastConstructPhaseClosed
+    || ctx?.runtime?.taskContext?.construct_phase_closed
+    || null;
 }
 
 /**
@@ -123,7 +139,7 @@ export function resolvePhaseKey(phase) {
 }
 
 /** Align session.phase with blueprint_verify slice (level / range / phase id). */
-function phaseFromBeginBody(body) {
+export function phaseFromBeginBody(body) {
   if (body.phase && typeof body.phase === 'object') return body.phase;
   if (body.phase_id) return { id: String(body.phase_id) };
   if (body.level != null && Number.isFinite(Number(body.level))) {
@@ -132,6 +148,88 @@ function phaseFromBeginBody(body) {
   const range = parsePhaseRange(body.range);
   if (range) return { range };
   return {};
+}
+
+/** gv2 cards send phase label (L3_walls) plus level/range — slice selectors win over the label. */
+export function normalizeSessionPhase(body = {}, taskContext = {}) {
+  const merged = {
+    level: body.level ?? taskContext.level,
+    range: body.range ?? taskContext.range,
+    phase: body.phase ?? taskContext.phase,
+    phase_id: body.phase_id ?? taskContext.phase_id,
+  };
+  if (merged.phase && typeof merged.phase === 'object' && !Array.isArray(merged.phase)) {
+    const out = { ...merged.phase };
+    if (merged.level != null && Number.isFinite(Number(merged.level))) {
+      out.level = Number(merged.level);
+    }
+    const range = parsePhaseRange(merged.range ?? out.range);
+    if (range) out.range = range;
+    return out;
+  }
+  const label = typeof merged.phase === 'string' && merged.phase.trim()
+    ? merged.phase.trim()
+    : merged.phase_id
+      ? String(merged.phase_id).trim()
+      : null;
+  const out = {};
+  if (label) out.id = label;
+  if (merged.level != null && Number.isFinite(Number(merged.level))) {
+    out.level = Number(merged.level);
+  }
+  const range = parsePhaseRange(merged.range);
+  if (range) out.range = range;
+  return out;
+}
+
+/** Args for blueprint_verify / construct_show (never spread a bare string phase). */
+export function phaseVerifyArgs(phase) {
+  const p = phase && typeof phase === 'object' ? phase : {};
+  const out = {};
+  if (p.level != null && Number.isFinite(Number(p.level))) out.level = Number(p.level);
+  const range = parsePhaseRange(p.range);
+  if (range) out.range = `${range[0]}..${range[1]}`;
+  return out;
+}
+
+export function buildConstructShowPayload(ctx, session, verifyData) {
+  const summary = verifyData.summary || session.progress || {};
+  const phaseKey = resolvePhaseKey(session.phase);
+  const verifyScope = phaseVerifyArgs(session.phase);
+  return {
+    construct_context: session,
+    verify_summary: summary,
+    phase_summary: summary,
+    phase_key: phaseKey,
+    verify_scope: verifyScope,
+    slice_selector: verifyScope.level != null
+      ? { kind: 'level', level: verifyScope.level }
+      : verifyScope.range
+        ? { kind: 'range', range: verifyScope.range }
+        : { kind: 'full' },
+    workset_size: session.workset_size,
+    sample_mismatches: (verifyData.mismatches || []).slice(0, 12),
+    guided_edit_progress: buildGuidedEditProgress(ctx),
+    next_hint: session.workset_size
+      ? 'mc fill/place/dig on workset cells; mc construct show until slice clean; mc construct end'
+      : 'mc construct end when slice verify missing=0 wrong=0 extra=0',
+  };
+}
+
+export function recordConstructPhaseClosed(ctx, session) {
+  if (!ctx?.runtime || !session) return;
+  const closure = {
+    plan_id: session.plan_id,
+    card_id: session.card_id || ctx.runtime.taskContext?.card_id || null,
+    phase: session.phase,
+    phase_key: resolvePhaseKey(session.phase) || session.phase?.id || null,
+    closed_at: Date.now(),
+  };
+  ctx.runtime.lastConstructPhaseClosed = closure;
+  const tc = ctx.runtime.taskContext;
+  if (tc?.card_kind === 'CONSTRUCT') {
+    tc.construct_phase_closed = closure;
+  }
 }
 
 /**
@@ -263,15 +361,17 @@ export async function runConstructBeginPipeline(deps, body, blueprintFns = null)
       });
     }
   }
+  const phase = normalizeSessionPhase(body, ctx.runtime?.taskContext || {});
   const bp = blueprintFns || createBlueprintActions(deps);
   const verifyRes = await bp.blueprint_verify({
     ...body,
+    target: body.target || body.plan_id || body.plan,
+    ...phaseVerifyArgs(phase),
     mismatch_cap: body.mismatch_cap || 5000,
   });
   if (!verifyRes.ok) return verifyRes;
   const data = verifyRes.data || {};
   const planId = data.plan_id || body.plan_id || body.target;
-  const phase = body.phase_id || body.phase || data.phase || phaseFromBeginBody(body);
   const phaseKey = resolvePhaseKey(phase);
   const mismatches = data.mismatches || [];
   const workset = worksetFromVerifyMismatches(mismatches, { phase_id: phaseKey || phase.id || phase.level });

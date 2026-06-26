@@ -29,6 +29,8 @@ HERMES_CONSTRUCT_CONTEXT=1 ./scripts/restart-tester.sh --no-sentinel
 
 Manual steps below remain the steward checklist; pytest is the repeatable gate before G1.
 
+Functional tests read `starter_shelter` anchor from `data/ops/plans/starter_shelter-plan.json` and teleport Tester + forceload footprint chunks before RCON geometry (`_ensure_plan_site_chunks` in `test_construct_scoped.py`) — do not assume anchor `(0,64,0)`.
+
 ## Known gaps (post-canary A/B)
 
 | Item | Status |
@@ -38,10 +40,21 @@ Manual steps below remain the steward checklist; pytest is the repeatable gate b
 | **E3** overlap / full gv2 CONSTRUCT body rules for schematic cards | Partial (`SchematicConstructValidatorTest` only) |
 | **C7** `guided_edit_progress` on every motor success path | Partial (place/fill/dig wired) |
 | **Canary C** plan revision drift | `test_construct_canary_scenario_c_plan_revision_mismatch` |
-| **`scripts/kanban complete`** | Blocks when assignee bot reports `construct_complete_blocked` (override: `KANBAN_ALLOW_COMPLETE_WITH_CONSTRUCT=1`) |
+| **`scripts/kanban complete`** | Blocks when assignee bot reports `construct_complete_blocked` (active session). Schematic CONSTRUCT cards (plan + `--card-kind CONSTRUCT`) also require matching `construct_phase_closed` on the bot (survives `task_context` clear after `mc construct end`). Override: `KANBAN_ALLOW_COMPLETE_WITH_CONSTRUCT=1` |
 | **`mc bot release`** | Best-effort `DELETE /task-context` on leased bot (same as scenario D DELETE) |
 
-Live fixes not in original plan text: `PLAN_ID_RE` allows `_` in plan ids; begin stores `phase.level` for end gates (`phaseFromBeginBody`).
+Live fixes not in original plan text: `PLAN_ID_RE` allows `_` in plan ids; begin stores structured `session.phase` (`normalizeSessionPhase`: level/range override string phase labels).
+
+## Construct end flags (`skip-gates` vs `skip_phase_gate`)
+
+| Flag | Effect |
+|------|--------|
+| *(none)* | Phase slice must be verify-clean (`evaluatePhaseClean` on `level` / `range` only), then plan `gates[]` run (`l0_ground`, `door_traversable`, `interior_air`, …). |
+| `--skip-gates` | Skip plan `gates[]` after phase-clean passes. Use on **non-final phase cards** (L1 slab, L3 walls) when cards intentionally defer shell gates to a later phase. Phase-clean still runs unless `skip_phase_gate` is also set. |
+| `--skip_phase_gate` | Skip slice verify-clean check. Dangerous for normal worker completion; operator rescue / dry runs only. |
+| Both set | End clears construct session without probes (same as legacy escape hatch). |
+
+**Worker rule:** gv2 CONSTRUCT cards should reach `mc construct end` **without** `--skip-gates` on the final shell phase; intermediate phases may match generator bodies that pass `--skip-gates` after slice work is done.
 
 ## Scenario A — Fresh flat site (`ready` path)
 
@@ -86,6 +99,17 @@ Live fixes not in original plan text: `PLAN_ID_RE` allows `_` in plan ids; begin
 **Pass signals:** `mc task_context show` without `construct_complete_blocked` after teardown; kanban complete only after construct end (`scripts/kanban complete` probes assignee bot; refuses while session active).
 
 **Automated:** `test_construct_canary_scenario_d_lifecycle_teardown` — active session exposes `construct_complete_blocked`; `DELETE /task-context` clears session (`mc bot release` uses the same HTTP clear when lease mode is on).
+
+## `--skip-gates` vs `--skip_phase_gate` (S4.2)
+
+| Flag | Phase-clean verify | Plan gates (`door_traversable`, `l0_ground`, …) |
+|------|-------------------|--------------------------------------------------|
+| neither | runs on **session slice** (`level` / `range` from task_context) | runs on final L4 |
+| `--skip-gates` | still runs | skipped |
+| `--skip_phase_gate` | skipped | still runs (if not skip-gates) |
+| both | skipped | skipped |
+
+gv2 **non-final** CONSTRUCT cards use `mc construct end --skip-gates` so stewards can advance the chain without final `door_traversable` on partial shells. **Phase-clean still runs** unless `--skip_phase_gate` is also set — workers must not treat slice `blueprint verify` alone as card done; `construct end` on the same slice is required (`CONSTRUCT_PHASE_NOT_CLOSED` blocks kanban complete after context clear).
 
 ## Rollback
 

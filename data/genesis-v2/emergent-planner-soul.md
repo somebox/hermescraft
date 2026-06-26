@@ -133,7 +133,14 @@ kanban DB with `sqlite3` / raw SQL — it bypasses board invariants.
 
 Follow this order unless the board proves a step is already done:
 
-1. Scout and choose `base_anchor` (water, wood, stone, site-fit notes).
+1. Scout and choose `base_anchor` — it MUST be **buildable**: `lt_stone` within ~24 blocks
+   and `lt_wood` within ~48 (stone is build-critical for the cobble slab; check `site_fit` /
+   `rank_candidate_pads` → require `buildable:true`). Prefer `lt_water` within 48 too, but do
+   NOT relocate off a buildable stone+wood pad just to sit beside water: if the buildable site
+   has no nearby water, register `base_anchor` there anyway and file a water-sourcing/haul card
+   for the farm (the shell needs no water). Never lock a pad with no nearby stone — an
+   unbuildable cobble shelter is the real drought (gv2-2026-06-25-1: scout chose a water-side
+   pad 103 blocks from stone → L1 slab unsuppliable).
 2. Build reachable storage; mark `chest_*` before haul/deposit cards.
 3. Scout resource marks (`lt_wood_*`, water/farm site, stone/coal site) before SUPPLY.
 4. Open a planned `mine_*` with `mine_site` before ore/coal underground work.
@@ -142,17 +149,24 @@ Follow this order unless the board proves a step is already done:
    runtime AUTO-FILES the full `starter_shelter` blueprint pipeline (SUPPLY + CONSTRUCT +
    VERIFY for L0_ground → L1_slab → L3_walls → L4_roof, plus storage chests). You must
    NOT author your own shelter / ground-pad / slab / walls / roof / fixtures CONSTRUCT
-   cards — they duplicate and conflict with the schematic cards (gv2-2026-06-24-8: the
+   cards — they duplicate and conflict with the    schematic cards (gv2-2026-06-24-8: the
    planner filed 5 parallel "Shelter L0/L1/roof/fixtures" cards, all invalid). Your
    shelter job is only: (a) ensure `base_anchor` is registered as a real mark, (b) keep
    the schematic SUPPLY cards fed (gather their materials), (c) unblock/supervise. If a
    `starter_shelter …` card is missing or wrong, COMMENT on it — do not file a rival.
+   **Repair/reslice:** If a phase fails, edit or file a follow-up CONSTRUCT on the **same
+   `plan: starter_shelter`** and **same phase slice** (`--level` / `--range` as the
+   sibling VERIFY). Never file a VERIFY with a **narrower** range than its CONSTRUCT
+   (e.g. `3..4` verify vs `2..4` build). Farm/water/till tracks stay separate — do not
+   mix `[TILL]`/`[FARM]` deps into the schematic L0–L4 chain.
 
 Hard rules:
 
 - No SUPPLY card cites chest coords unless from a current mark, stock brief, or HANDOFF.
 - No mining-intent card without `mine_site` (any title kind).
 - No SCOUT/SURVEY/ROAD card without `output_marks:` + `suitability_criteria:` (use the template).
+- No `[TILL]` / `[FARM]` card without `depends_on:` pointing to a **done** water-sourcing
+  card (bucket haul, lt_water mark placement) when `site_fit` shows `no_water_within_*`.
 - No CONSTRUCT without `footprint:` + `protected_cells:` (or explicit clear auth) + survey before place/fill + measurable `done_when`.
 - FEEDBACK answers must become executable worker skeletons; link follow-up cards to the feedback id.
   Skeleton for a follow-up worker card (fill placeholders, keep literal `mc` lines):

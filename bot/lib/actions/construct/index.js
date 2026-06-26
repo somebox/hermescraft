@@ -5,7 +5,16 @@ import {
   worksetFromVerifyMismatches,
   constructScopingEnabled,
 } from '../../runtime/construct-context.js';
-import { clearConstructSession, runConstructBeginPipeline, buildGuidedEditProgress, runConstructEndGateCheck, resolvePhaseKey } from '../../runtime/construct-lifecycle.js';
+import { computeMaterialsMissing } from '../../runtime/construct-materials.js';
+import {
+  clearConstructSession,
+  runConstructBeginPipeline,
+  runConstructEndGateCheck,
+  resolvePhaseKey,
+  phaseVerifyArgs,
+  buildConstructShowPayload,
+  recordConstructPhaseClosed,
+} from '../../runtime/construct-lifecycle.js';
 
 function constructEnabled() {
   return constructScopingEnabled();
@@ -66,7 +75,11 @@ export function createConstructActions(deps, blueprintFns) {
           next_action_hint: 'mc task_context set :worksite: --card <id> or mc construct begin :region:',
         });
       }
-      const verifyRes = await runVerify({ ...body, target: body.target || session.target, ...session.phase });
+      const verifyRes = await runVerify({
+        ...body,
+        target: body.target || session.target,
+        ...phaseVerifyArgs(session.phase),
+      });
       if (!verifyRes.ok) return verifyRes;
       const data = verifyRes.data || {};
       session.progress = data.summary || session.progress;
@@ -87,12 +100,7 @@ export function createConstructActions(deps, blueprintFns) {
       }
       return ok({
         result: `Construct show ${session.plan_id}`,
-        data: {
-          construct_context: session,
-          verify_summary: data.summary,
-          sample_mismatches: (data.mismatches || []).slice(0, 12),
-          guided_edit_progress: buildGuidedEditProgress(ctx),
-        },
+        data: buildConstructShowPayload(ctx, session, data),
       });
     },
 
@@ -103,6 +111,7 @@ export function createConstructActions(deps, blueprintFns) {
       }
       const gateCheck = runConstructEndGateCheck(deps, session, body);
       if (!gateCheck.ok) return gateCheck.response;
+      recordConstructPhaseClosed(ctx, session);
       clearConstructSession(ctx);
       return ok({
         result: `Construct context ended for ${session.plan_id}`,

@@ -204,6 +204,22 @@ class ValidateCardTest(unittest.TestCase):
         )
         self.assertTrue(r["ok"], r["errors"])
 
+    def test_mc_mine_standalone_verb_invalid(self):
+        body = (
+            "anchor: base_anchor\n"
+            "mc bot checkout --near base_anchor --cap miner\n"
+            "mc mine iron_ore 32\n"
+            "mc bot release\n"
+        )
+        r = validate_card(
+            title="[SUPPLY] Mine iron",
+            body=body,
+            assignee="colony-miner",
+            registry_verbs={"collect", "checkout", "release", "bot"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(any("standalone mc mine" in e for e in r["errors"]))
+
     def test_valid_supply_requires_schema_fields(self):
         r = validate_card(
             title="[SUPPLY] Gather oak logs",

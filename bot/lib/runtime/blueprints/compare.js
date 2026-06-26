@@ -11,6 +11,31 @@ export function isAirBlockName(name) {
   return AIR_NAMES.has(String(name || '').toLowerCase());
 }
 
+// Base furniture / utility fixtures — INTENDED interior contents, not structural
+// blocks. When a phase slice expects air but one of these is present (e.g. a
+// chest/furnace inside the shell), the construct-end phase-clean gate must NOT
+// count it as a removable "extra": it is base furniture, usually PROTECTED from
+// digging (gv2-2026-06-25-3: walls physically complete but construct end blocked
+// on extra=3 = depot chest + furnace + storage chest the builder couldn't dig).
+// Structural materials (planks/stairs/slabs/doors/glass) are deliberately NOT here
+// — a stray one is scaffolding/junk that should still fail the gate.
+const FIXTURE_NAMES = new Set([
+  'chest', 'trapped_chest', 'ender_chest',
+  'furnace', 'blast_furnace', 'smoker',
+  'barrel', 'crafting_table', 'cartography_table', 'smithing_table',
+  'fletching_table', 'loom', 'stonecutter', 'grindstone', 'lectern',
+  'brewing_stand', 'enchanting_table', 'anvil', 'chipped_anvil', 'damaged_anvil',
+  'bell', 'campfire', 'soul_campfire', 'bookshelf', 'jukebox', 'note_block',
+  'composter', 'cauldron', 'beehive', 'bee_nest',
+]);
+
+export function isFixtureBlockName(name) {
+  const n = normalizeBlockId(name);
+  if (FIXTURE_NAMES.has(n)) return true;
+  if (/_bed$/.test(n) || n === 'bed') return true;
+  return false;
+}
+
 export function normalizeBlockId(raw) {
   let s = String(raw || '')
     .trim()

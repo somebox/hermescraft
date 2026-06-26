@@ -1,7 +1,7 @@
 {
   "kind": "construct",
   "plan_id": "starter_shelter",
-  "revision": "starter_shelter-v1",
+  "revision": "starter_shelter-v2",
   "source": {
     "type": "genesis",
     "name": "7x7 starter shelter (layered base MVP fixture)"
@@ -25,15 +25,15 @@
   },
   "anchor": {
     "coords": [
-      -150,
+      -186,
       70,
-      -249
+      -247
     ],
     "marker": {
       "coords": [
-        -147,
+        -183,
         70,
-        -250
+        -248
       ],
       "note": "sign south of door gap"
     }
@@ -49,7 +49,7 @@
     },
     {
       "id": "L3_walls",
-      "range": "3..4"
+      "range": "2..4"
     },
     {
       "id": "L4_roof",
@@ -73,8 +73,8 @@
     ],
     "L3_walls": [
       {
-        "name": "oak_log",
-        "count": 40
+        "name": "oak_planks",
+        "count": 68
       }
     ],
     "L4_roof": [
@@ -91,11 +91,13 @@
     ],
     "oak_log": [
       "spruce_log",
-      "birch_log"
+      "birch_log",
+      "oak_planks"
     ],
     "oak_planks": [
       "spruce_planks",
-      "birch_planks"
+      "birch_planks",
+      "oak_log"
     ]
   },
   "cells": [
@@ -497,7 +499,7 @@
         3,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -505,7 +507,7 @@
         3,
         1
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -513,7 +515,7 @@
         3,
         2
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -521,7 +523,7 @@
         3,
         3
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -529,7 +531,7 @@
         3,
         4
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -537,7 +539,7 @@
         3,
         5
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -545,7 +547,7 @@
         3,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -553,7 +555,7 @@
         3,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -561,7 +563,7 @@
         3,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -569,7 +571,7 @@
         3,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -577,7 +579,7 @@
         3,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -585,7 +587,7 @@
         3,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -593,7 +595,7 @@
         3,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -601,7 +603,7 @@
         3,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -609,7 +611,7 @@
         3,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -617,7 +619,7 @@
         3,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -625,7 +627,7 @@
         3,
         1
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -633,7 +635,7 @@
         3,
         2
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -641,7 +643,7 @@
         3,
         3
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -649,7 +651,7 @@
         3,
         4
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -657,7 +659,7 @@
         3,
         5
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -665,7 +667,7 @@
         3,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -673,7 +675,7 @@
         4,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -681,7 +683,7 @@
         4,
         1
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -689,7 +691,7 @@
         4,
         2
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -697,7 +699,7 @@
         4,
         3
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -705,7 +707,7 @@
         4,
         4
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -713,7 +715,7 @@
         4,
         5
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -721,7 +723,7 @@
         4,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -729,7 +731,7 @@
         4,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -737,7 +739,7 @@
         4,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -745,7 +747,7 @@
         4,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -753,7 +755,7 @@
         4,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -761,7 +763,7 @@
         4,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -769,7 +771,7 @@
         4,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -777,7 +779,7 @@
         4,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -785,7 +787,7 @@
         4,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -793,7 +795,7 @@
         4,
         0
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -801,7 +803,7 @@
         4,
         1
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -809,7 +811,7 @@
         4,
         2
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -817,7 +819,7 @@
         4,
         3
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -825,7 +827,7 @@
         4,
         4
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -833,7 +835,7 @@
         4,
         5
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -841,7 +843,7 @@
         4,
         6
       ],
-      "block": "oak_log"
+      "block": "oak_planks"
     },
     {
       "local": [
@@ -1216,11 +1218,203 @@
         6,
         5,
         6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        2,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        2,
+        1
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        2,
+        2
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        2,
+        3
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        2,
+        4
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        2,
+        5
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        2,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        1,
+        2,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        1,
+        2,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        2,
+        2,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        2,
+        2,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        3,
+        2,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        4,
+        2,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        5,
+        2,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        5,
+        2,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        2,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        2,
+        1
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        2,
+        2
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        2,
+        3
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        2,
+        4
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        2,
+        5
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        2,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        3,
+        4,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        4,
+        4,
+        0
       ],
       "block": "oak_planks"
     }
   ],
   "stats": {
-    "cells": 140
+    "cells": 164
   }
 }

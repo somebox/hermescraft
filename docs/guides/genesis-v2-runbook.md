@@ -358,3 +358,36 @@ hermes kanban --board genesis-v2 stats; pgrep -f genesis-v2-poller
 # advise attempts should stay ~0
 grep -c 'mc advise' /tmp/{mox,pip,zee}-bot.log
 ```
+
+---
+
+## Schematic bundle checklist (starter_shelter / gv2)
+
+Use when reviewing **`file_starter_shelter_sequence`** output or debugging a schematic run. ADRs: [`docs/architecture/adr-schematic-gate-material.md`](../architecture/adr-schematic-gate-material.md), [`adr-schematic-gate-fixtures.md`](../architecture/adr-schematic-gate-fixtures.md), [`adr-schematic-gate-door.md`](../architecture/adr-schematic-gate-door.md). Pilot stop metrics: [`docs/devlog/gv2-12-pilot-protocol.md`](../devlog/gv2-12-pilot-protocol.md).
+
+### Per filed phase (L0_ground → L1_slab → L3_walls → L4_roof)
+
+| Field | Check |
+|-------|--------|
+| **Slice** | CONSTRUCT + VERIFY + `task_context set` share the same `--level` or `--range` as plan `phases[]` |
+| **Deps** | SUPPLY → CONSTRUCT → VERIFY linked; chest card after L4 only |
+| **CONSTRUCT body** | `mc construct show` → scoped fill → verify line → `construct end` (`--skip-gates` except final phase) |
+| **done_when** | Names **both** slice verify **and** successful **`construct end`** on that slice |
+| **Materials** | SUPPLY matches `materials_by_phase` (L3: **oak_log**) |
+| **Completion signal** | Worker completes only after **`construct end` ok**; not after verify alone or after `task_context clear` |
+
+### Operator dry-run
+
+```bash
+# Offline card bodies (no board write)
+python3 -c "from scripts.lib import gv2_schematic_shelter as g; ..."  # or genesis bootstrap dry-run path your run uses
+HERMES_KANBAN_BOARD=genesis-v2 scripts/kanban validate-board --status ready,todo
+```
+
+### gv2-12 stop (summary)
+
+1. **`retro`** before **`stop`** (capture card-stories + RETRO).
+2. Score **shell/ground**, **`construct end` rate per phase**, **`gv2_invalid=0`** on schematic cards.
+3. On failure, use gap register [`docs/devlog/schematic-construction-gap-register.md`](../devlog/schematic-construction-gap-register.md) — do not `--force` stop as first move.
+
+Baseline probe log: [`docs/devlog/schematic-construction-probe-log.md`](../devlog/schematic-construction-probe-log.md).

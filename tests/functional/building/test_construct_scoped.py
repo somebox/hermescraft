@@ -8,13 +8,42 @@ Scenario B (prep_required): water at footprint corner blocks begin; flat pad all
 
 from __future__ import annotations
 
+import json
 import urllib.request
+from pathlib import Path
 
 import pytest
 
-ANCHOR_X, ANCHOR_Y, ANCHOR_Z = 0, 64, 0
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_STARTER_SHELTER_PLAN = _REPO_ROOT / "data/ops/plans/starter_shelter-plan.json"
+
+
+def _starter_shelter_anchor() -> tuple[int, int, int]:
+    plan = json.loads(_STARTER_SHELTER_PLAN.read_text(encoding="utf-8"))
+    ax, ay, az = plan["anchor"]["coords"]
+    return int(ax), int(ay), int(az)
+
+
+ANCHOR_X, ANCHOR_Y, ANCHOR_Z = _starter_shelter_anchor()
 SIZE = 7
 L1_Y = ANCHOR_Y + 1
+
+
+def _ensure_plan_site_chunks(arena, bot) -> None:
+    """Generate/load landfolk-test chunks at the plan anchor (forceload alone is insufficient)."""
+    _forceload_plan_footprint(arena)
+    arena.teleport_bot(ANCHOR_X + 3, L1_Y + 1, ANCHOR_Z + 3, 90, 0)
+    arena.settle_heavy()
+
+
+def _forceload_plan_footprint(arena) -> None:
+    """Keep starter_shelter plan cells loaded in landfolk-test (anchor may be off-spawn)."""
+    margin = 1
+    cx1 = ANCHOR_X // 16 - margin
+    cz1 = ANCHOR_Z // 16 - margin
+    cx2 = (ANCHOR_X + SIZE - 1) // 16 + margin
+    cz2 = (ANCHOR_Z + SIZE - 1) // 16 + margin
+    arena.forceload((cx1, cz1, cx2, cz2))
 
 
 def _clear_construct_state(bot) -> None:
@@ -78,8 +107,8 @@ def construct_arena(functional_world, rcon, arena, config, bot):
         "clear Tester",
         f"execute in {world} run give Tester minecraft:cobblestone 64",
     ])
+    _ensure_plan_site_chunks(arena, bot)
     _lay_ready_l1_pad(rcon, world, x0, z0, x1, z1)
-    arena.forceload((-1, -1, 1, 1))
     arena.settle_heavy()
     x0, z0 = ANCHOR_X, ANCHOR_Z
     gap_x, gap_z = x0 + 3, z0 + 3
@@ -188,6 +217,7 @@ def test_construct_canary_scenario_b_prep_required(functional_world, rcon, arena
     x0, z0 = ANCHOR_X, ANCHOR_Z
     x1, z1 = x0 + SIZE - 1, z0 + SIZE - 1
 
+    _ensure_plan_site_chunks(arena, bot)
     rcon.batch([
         f"execute in {world} run fill {x0 - 2} {ANCHOR_Y - 4} {z0 - 2} {x1 + 2} {ANCHOR_Y + 8} {z1 + 2} minecraft:air",
         f"execute in {world} run fill {x0 - 2} {ANCHOR_Y - 1} {z0 - 2} {x1 + 2} {ANCHOR_Y - 1} {z1 + 2} minecraft:stone",
@@ -231,6 +261,7 @@ def test_construct_canary_scenario_b_prep_required(functional_world, rcon, arena
     assert auto.get("ok") is False, auto
     assert (auto.get("error") or {}).get("code") == "CONSTRUCT_PREP_REQUIRED"
 
+    _ensure_plan_site_chunks(arena, bot)
     _lay_ready_l1_pad(rcon, world, x0, z0, x1, z1)
     arena.settle_fast()
 

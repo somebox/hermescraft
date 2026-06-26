@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { compareBlocks, isAirBlockName } from './compare.js';
+import { compareBlocks, isAirBlockName, isFixtureBlockName } from './compare.js';
 import { iterateFootprintLocals, localToWorld } from './footprint.js';
 import { BLUEPRINT_LIMITS } from './limits.js';
 
@@ -14,6 +14,7 @@ export function verifyPlan(ctx, getBlockName, phase = {}) {
   let missing = 0;
   let wrong = 0;
   let extra = 0;
+  let fixtures = 0;
 
   const max = BLUEPRINT_LIMITS.verifyMaxCellsPerCall;
   let scanned = 0;
@@ -52,6 +53,14 @@ export function verifyPlan(ctx, getBlockName, phase = {}) {
       continue;
     }
     if (expAir && !obsAir) {
+      // Base furniture (chest/furnace/bed/…) placed in an interior air cell is
+      // INTENDED content, not structural junk, and is usually protected from
+      // digging — don't count it as a removable extra (it must not block the
+      // structural construct-end gate). Scaffolding/material blocks still do.
+      if (isFixtureBlockName(observed)) {
+        fixtures++;
+        continue;
+      }
       extra++;
       mismatches.push({
         cell: world,
@@ -90,7 +99,7 @@ export function verifyPlan(ctx, getBlockName, phase = {}) {
   }
 
   return {
-    summary: { ok, missing, wrong, extra, scanned },
+    summary: { ok, missing, wrong, extra, fixtures, scanned },
     mismatches,
     truncated,
     next_hint: truncated ? 'Rerun with --level or --range to continue' : undefined,

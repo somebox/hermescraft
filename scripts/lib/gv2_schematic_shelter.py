@@ -40,6 +40,30 @@ def footprint_min_from_base_anchor(base: dict[str, int]) -> tuple[int, int, int]
     return ax - FOOTPRINT_HALF, ay - 1, az - FOOTPRINT_HALF
 
 
+def staging_depot_candidate_coords(spawn: dict[str, int]) -> tuple[int, int, int]:
+    """Candidate cell for the material STAGING depot chest — one block east of spawn feet.
+
+    This is only a CANDIDATE: whether it actually clears the base footprint depends on
+    base_anchor, which this function does not see. Callers that need the invariant
+    ("depot outside the shelter footprint") must check it with
+    `staging_depot_clears_footprint(base_anchor, spawn)`. Operator doctrine: starter chest
+    at spawn, base must not overlap it, contents migrate to the base chests after the
+    shell is built. Single source of truth shared by the placement check, the staging-card
+    placer, and the fixture-policy overlap guard so they can never disagree."""
+    sx, sy, sz = int(spawn["x"]), int(spawn["y"]), int(spawn["z"])
+    return sx + 1, sy, sz
+
+
+def staging_depot_clears_footprint(base_anchor: dict[str, int], spawn: dict[str, int]) -> bool:
+    """True when the staging depot candidate cell is OUTSIDE the 7×7 base footprint —
+    the invariant the depot lifecycle relies on. When False, base + staging overlap and
+    the placement gate must relocate (this is the real check, not a docstring claim)."""
+    ox, _oy, oz = footprint_min_from_base_anchor(base_anchor)
+    sx, _sy, sz = staging_depot_candidate_coords(spawn)
+    inside = ox <= sx <= ox + 6 and oz <= sz <= oz + 6
+    return not inside
+
+
 def patch_starter_shelter_plan(
     repo_root: Path,
     data_dir: Path,
@@ -94,7 +118,9 @@ def verify_card_body(
         f"plan: {plan_id}\n"
         f"phase: {phase_key}\n"
         f"{dep}"
-        f"done_when: blueprint verify summary missing=0 wrong=0 for this phase slice\n"
+        f"done_when: blueprint verify missing=0 wrong=0 for this phase slice "
+        f"(same --level/--range as sibling CONSTRUCT); CONSTRUCT card still requires "
+        f"mc construct end ok — verify alone is not completion\n"
         f"mc bot checkout --near {checkout_near} --cap builder --mark {anchor_mark}\n"
         f"preflight:\n"
         f"  mc scene\n"
@@ -191,18 +217,28 @@ def _construct_body_for_phase(
             f"footprint: {footprint_label(plan, at_mark=anchor_mark)}\n"
             f"protected_cells: none — ground-plane level/drain only (no plan blocks here); "
             f"clearing/leveling authorized via mc level / mc fill air replace water\n"
+            f"chunking: mc level_ground max 16 columns/call — tile the 7×7 into ≤4×4 "
+            f"rectangles; one execute=true call per tile. mc fill max 32 blocks/call.\n"
             f"ground_prep: this is a LEVEL/DRAIN phase — the plan places no blocks "
             f"here. If the footprint has holes/water at the ground plane, fill them "
             f"with cobblestone and drain (mc fill air replace water); otherwise the "
             f"natural ground is already L0-clean.\n"
             f"{verify_line}\n"
-            f"{end_line}\n"
+            # A ground-prep phase has ZERO plan cells, so the phase-clean gate sees
+            # every natural ground block in the footprint as `extra` and construct end
+            # always GATE_FAILs (gv2-2026-06-25-1: L0 blocked, extra=49 grass at y=63).
+            # --skip-gates alone skips only the custom plan gates, NOT the phase-clean
+            # check (bot/lib/runtime/construct-lifecycle.js:526) — a zero-cell prep
+            # phase must skip BOTH. Drainage truth is still enforced offline by the L0
+            # base_viability gate at score time, not this slice verify.
+            f"mc construct end --skip-gates --skip-phase-gate\n"
             f"mc bot release\n"
         )
 
     # One fill per distinct expected block (L1 cobblestone / L3 oak_log / L4 oak_planks).
     fill_lines = "".join(
-        f"mc fill {b} (workset slices only; expected_block {b})\n" for b in place_blocks
+        f"mc fill {b} (workset slices only; max 32 blocks/call — split if denied; "
+        f"expected_block {b})\n" for b in place_blocks
     )
     return (
         f"anchor: {anchor_mark}\n"
@@ -213,7 +249,8 @@ def _construct_body_for_phase(
         f"{level_line}"
         f"{range_line}"
         f"{rev_line}"
-        f"done_when: phase {phase_key} clean ({verify_line} then construct end)\n"
+        f"done_when: mc construct end ok on this phase slice after motor/fill; "
+        f"{verify_line} is a check — do not kanban_complete on verify alone\n"
         f"mc bot checkout --near {checkout_near} --cap builder --mark {anchor_mark}\n"
         # No literal --card: the worker resolves its own card id from
         # HERMES_KANBAN_TASK (set by the dispatcher). This lets the CONSTRUCT
@@ -228,6 +265,8 @@ def _construct_body_for_phase(
         f"mc observe\n"
         f"footprint: {footprint_label(plan, at_mark=anchor_mark)}\n"
         f"protected_cells: none after survey — use construct workset\n"
+        f"chunking: per-call caps — mc fill ≤32 blocks, mc level/level_ground ≤16 columns; "
+        f"tile larger boxes into multiple calls\n"
         f"mc construct show\n"
         f"{fill_lines}"
         f"{verify_line}\n"
@@ -238,8 +277,14 @@ def _construct_body_for_phase(
 
 def shelter_chests_card_body(base_anchor: dict[str, int]) -> str:
     ax, ay, az = int(base_anchor["x"]), int(base_anchor["y"]), int(base_anchor["z"])
-    wx, wy, wz = ax - 1, ay, az
-    fx, fy, fz = ax - 1, ay, az + 1
+    # ON TOP of the L1 slab, not embedded in it. The slab plane is ay (== oy+1);
+    # the floor surface inside the shell is ay+1. gv2-2026-06-25-2: chests were
+    # placed AT ay (the slab plane) → embedded in / colliding with the cobblestone
+    # floor inside the pad. ax-1 is an interior column (footprint center is ax, ±3),
+    # so the chest sits on cobblestone (supported), inside the walls, clear of the
+    # perimeter and the slab fill.
+    wx, wy, wz = ax - 1, ay + 1, az
+    fx, fy, fz = ax - 1, ay + 1, az + 1
     return (
         "anchor: base_anchor\n"
         "source_truth: marks\n"

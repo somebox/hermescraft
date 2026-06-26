@@ -95,6 +95,12 @@
       "present": false,
       "viable": null
     },
+    "fixture_policy": {
+      "present": false,
+      "ok": true,
+      "violations": [],
+      "expected": {}
+    },
     "board_quality": {
       "gv2_invalid": 1,
       "checked": 3,
@@ -151,12 +157,12 @@
       "missed": []
     },
     "compare": {
-      "prev_run_id": "gv2-fixture-test",
+      "prev_run_id": "gv2-test",
       "baseline_run_id": null,
       "compare_safe": true,
       "overall_delta_vs_prev": null,
       "overall_delta_vs_baseline": null,
-      "note": " prev scorecard missing for gv2-fixture-test."
+      "note": " prev scorecard missing for gv2-test."
     },
     "headline": "Achievement G0 (overall 28) \u2014 board_quality.gv2_invalid 1 vs max 0",
     "band": "C",

@@ -29,6 +29,7 @@ import {
   clearConstructSession,
   constructCompletionBlockedReason,
   constructFieldsForTaskContext,
+  getConstructPhaseClosure,
   resolveConstructPlanSnapshot,
   shouldAutoBeginConstruct,
   tryAutoBeginConstructFromTaskContext,
@@ -177,10 +178,12 @@ export function createBotHttpListener(deps) {
       const TASK_MAX_MS = 4 * 60 * 60 * 1000;
       if (req.method === 'GET') {
         const block = constructCompletionBlockedReason(ctx);
+        const phaseClosure = getConstructPhaseClosure(ctx);
         return respond(res, 200, {
           ok: true,
           data: {
             task_context: ctx.runtime.taskContext,
+            ...(phaseClosure ? { construct_phase_closed: phaseClosure } : {}),
             ...(block ? { construct_complete_blocked: block } : {}),
           },
         });
@@ -230,6 +233,7 @@ export function createBotHttpListener(deps) {
           ...constructExtra,
         };
         if (constructExtra.card_kind === 'CONSTRUCT') {
+          delete ctx.runtime.taskContext.construct_phase_closed;
           const snap = resolveConstructPlanSnapshot(ctx, {
             plan: constructExtra.plan,
             worksite_region,

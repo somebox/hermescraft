@@ -6,7 +6,7 @@ triggers:
   - mc blueprint
   - plan_id
   - footprint
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Minecraft blueprints
@@ -45,6 +45,10 @@ Air at adopt target **removes** the cell from `cells[]`. Bot capture requires `-
 ## Workers
 
 **Construct mode** (CONSTRUCT cards, `HERMES_CONSTRUCT_CONTEXT=1`): follow [`minecraft-building.md`](minecraft-building.md) § Schematic construct mode — `mc task_context set`, scoped `fill`/`place`/`dig`, `mc construct show` / `end`. Do not use `mc wall` inside the workset.
+
+**Phase flags on verify must match the card:** If CONSTRUCT uses `--range 2..4`, VERIFY and `construct end` use the same range — not a narrower band. **`blueprint verify` missing=0** on a slice does not replace **`construct end`** success on that slice.
+
+**L3 `starter_shelter` walls:** plan block id is **`oak_log`** (not planks-only); see [`docs/architecture/adr-schematic-gate-material.md`](../docs/architecture/adr-schematic-gate-material.md).
 
 **Verify-only / legacy layer builds:**
 

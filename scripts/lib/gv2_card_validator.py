@@ -420,6 +420,12 @@ def validate_card(
                 warnings.append(
                     "FARM/TILL card missing mc farm_status or mc verify_plot preflight before bulk till/plant"
                 )
+            if resolved_kind == "TILL" or re.search(r"\bTILL\b", title or "", re.I):
+                if not _DEPENDS_ON_RE.search(body or ""):
+                    errors.append(
+                        "TILL card missing depends_on: — wire prereq to a done water-sourcing card "
+                        "(bucket haul / lt_water placement) before tilling dry ground"
+                    )
 
     if _VALUABLE_BRIDGE_RE.search(body):
         errors.append(
@@ -436,7 +442,13 @@ def validate_card(
             if verb == "bot":
                 continue
             if verb not in verbs and verb not in KNOWN_ALIASES:
-                errors.append(f"unknown mc verb in body: {verb!r}")
+                if verb == "mine":
+                    errors.append(
+                        "unknown mc verb in body: 'mine' — use mc collect, mc stair_down, "
+                        "mc mine_open/mine_resume, or mc tunnel (no standalone mc mine)"
+                    )
+                else:
+                    errors.append(f"unknown mc verb in body: {verb!r}")
 
     return {
         "ok": len(errors) == 0,

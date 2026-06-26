@@ -144,7 +144,8 @@ mode. It is intentionally build-layer-lite and aligns to
 
 - L0 gate: no air/water under footprint + 1-ring apron.
 - L1 gate: slab/floor coverage at or above the layer threshold.
-- Do not place chests/furnaces in L0/L1 cards (fixtures are later-layer work).
+- Do not place chests/furnaces in L0/L1 **schematic phase** cards (depot chests follow
+  `adr-schematic-gate-fixtures.md` after L4_roof or the dedicated chest card).
 
 ### L0 template (copy verbatim; fill placeholders)
 
