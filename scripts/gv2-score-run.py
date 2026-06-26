@@ -30,6 +30,7 @@ from scripts.lib.gv2_metrics.production import extract_production  # noqa: E402
 from scripts.lib.gv2_metrics.summary import build_summary, evaluate_expected_metrics  # noqa: E402
 from scripts.lib.gv2_metrics.time import extract_time  # noqa: E402
 from scripts.lib.gv2_metrics_history import append_metrics_history  # noqa: E402
+from scripts.lib.gv2_fixture_policy import audit_starter_shelter_fixtures  # noqa: E402
 from scripts.lib.gv2_smoke_status import smoke_status_for_run  # noqa: E402
 
 
@@ -48,12 +49,18 @@ def score_run(run_root: Path) -> dict:
     motor = extract_motor(art)
     base_viability = extract_base_viability(run_root)
     establishment = apply_viability_gate(extract_establishment(run_root), base_viability)
+    loc_path = art / "locations-base.json"
+    if not loc_path.is_file():
+        loc_path = g2.DATA_DIR / "locations-base.json"
+    locations = json.loads(loc_path.read_text()) if loc_path.is_file() else {}
+    fixture_policy = audit_starter_shelter_fixtures(run_root, locations)
     metrics = {
         "time": time_m,
         "motor": motor,
         "production": extract_production(run_root),
         "establishment": establishment,
         "base_viability": base_viability,
+        "fixture_policy": fixture_policy,
         "board_quality": extract_board_quality(board),
         "cards": extract_cards(board, run_root=run_root),
         "fleet": extract_fleet(art, time_m.get("run_wall_s")),
@@ -96,6 +103,10 @@ def score_run(run_root: Path) -> dict:
     scorecard = {
         "schema_version": 1,
         "run_id": config.get("run_id") or run_root.name,
+        # Top-level trust rollup: a partial L0 capture means the physical score is on
+        # incomplete data — surfaced here so it is never silently believed (GS1).
+        "base_viability_trusted": base_viability.get("base_viability_trusted", False),
+        "warnings": [w for w in [base_viability.get("coverage_warning")] if w],
         "metrics": metrics,
         "summary": summary,
         "feedback": {

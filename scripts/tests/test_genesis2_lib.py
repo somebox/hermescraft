@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -455,6 +456,19 @@ def test_reap_orphan_leases_frees_terminal_and_absent_owners(monkeypatch):
     assert "genesis-v2:t_running" not in released   # active owner left alone
 
 
+def test_reap_orphan_leases_frees_unreachable_running_worker(monkeypatch):
+    released = _reap_setup(monkeypatch)
+    monkeypatch.setattr(g2, "_bot_connected", lambda port: False)
+    rows = [
+        {"bot": "zee", "owner_id": "genesis-v2:t_running", "busy": False, "reachable": False},
+    ]
+    status = {"t_running": "running"}
+    freed = g2.reap_orphan_leases("gv2-x", status_by_id=status, lease_rows=rows)
+    assert len(freed) == 1
+    assert freed[0]["status"] == "worker_unreachable"
+    assert "genesis-v2:t_running" in released
+
+
 def test_reap_orphan_leases_skips_foreign_owners(monkeypatch):
     released = _reap_setup(monkeypatch)
     rows = [
@@ -692,6 +706,74 @@ def test_file_supply_card_routes_dedups_caps(monkeypatch):
     state["open"] = False; state["count"] = g2.MAX_SUPPLY_PER_RESOURCE
     assert g2.file_supply_card("gv2-x", d) is None          # cap reached
     assert state["created"] == 1
+
+
+def test_file_supply_card_skips_when_schematic_wood_supply_open(monkeypatch, tmp_path):
+    run_id = "gv2-schematic-dedup"
+    rd = tmp_path / "runs" / run_id
+    rd.mkdir(parents=True)
+    (rd / "config.json").write_text(
+        json.dumps({"run_id": run_id, "schematic_shelter_bootstrapped": True}) + "\n"
+    )
+    monkeypatch.setattr(g2, "RUNS_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(g2, "load_config", lambda rid: json.loads((rd / "config.json").read_text()))
+
+    def fake_hermes(args, **kw):
+        p = MagicMock()
+        p.returncode = 0
+        if args[0] == "list":
+            tasks = [
+                {
+                    "id": "s_plan",
+                    "title": "[SUPPLY] oak_planks for starter_shelter L3_walls",
+                    "status": "ready",
+                    "body": "plan: starter_shelter\nphase: L3_walls\nmc collect oak_planks 32",
+                },
+            ]
+            p.stdout = json.dumps(tasks)
+        elif args[0] == "create":
+            p.stdout = json.dumps({"id": "s_new"})
+        return p
+
+    monkeypatch.setattr(g2, "_hermes", fake_hermes)
+    d = {"resource": "wood", "current": 5, "target_min": 64, "assignee": "colony-gatherer", "items": ["oak_planks"]}
+    assert g2.file_supply_card(run_id, d) is None
+
+
+def test_maybe_bootstrap_schematic_skips_when_in_progress(monkeypatch, tmp_path):
+    run_id = "gv2-boot-guard"
+    rd = tmp_path / "runs" / run_id
+    rd.mkdir(parents=True)
+    cfg = {
+        "run_id": run_id,
+        "schematic_shelter_bootstrap_in_progress": True,
+        "schematic_shelter_bootstrap_in_progress_at": time.time(),  # fresh ⇒ honour the flag
+        "world": "genesis2",
+    }
+    (rd / "config.json").write_text(json.dumps(cfg) + "\n")
+    monkeypatch.setattr(g2, "RUNS_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(g2, "run_dir", lambda rid: rd)
+    monkeypatch.setattr(g2, "load_config", lambda rid: json.loads((rd / "config.json").read_text()))
+    monkeypatch.setattr(g2, "save_config", lambda c: (rd / "config.json").write_text(json.dumps(c) + "\n"))
+    monkeypatch.setattr(g2, "_base_anchor_coords", lambda: {"x": 0, "y": 65, "z": 0})
+    assert g2.maybe_bootstrap_schematic_shelter_for_run(run_id) is False
+
+
+def test_bootstrap_in_progress_fresh_vs_stale():
+    """WS2: a fresh in-progress flag blocks re-entry; a stale or timestamp-less one
+    (prior bootstrap crashed) does not, so the run can recover."""
+    assert g2._bootstrap_in_progress_fresh(
+        {"schematic_shelter_bootstrap_in_progress": True,
+         "schematic_shelter_bootstrap_in_progress_at": time.time()}
+    ) is True
+    assert g2._bootstrap_in_progress_fresh(
+        {"schematic_shelter_bootstrap_in_progress": True,
+         "schematic_shelter_bootstrap_in_progress_at": time.time() - (g2.BOOTSTRAP_INPROGRESS_TTL_S + 60)}
+    ) is False
+    assert g2._bootstrap_in_progress_fresh(
+        {"schematic_shelter_bootstrap_in_progress": True}  # no timestamp ⇒ stale
+    ) is False
+    assert g2._bootstrap_in_progress_fresh({}) is False
 
 
 def test_detect_gate_gap_fires_on_frontier_when_idle(monkeypatch):

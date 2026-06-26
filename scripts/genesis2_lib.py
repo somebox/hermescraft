@@ -50,6 +50,7 @@ BODY_POOL = {
     "pip": {"user": "Pip", "port": 3005},
     "zee": {"user": "Zee", "port": 3006},
 }
+BOT_PORT_BY_USER = {b["user"].lower(): b["port"] for b in BODY_POOL.values()}
 
 
 # --------------------------------------------------------------------------- #
@@ -913,6 +914,21 @@ def _find_card_id_by_title_substring(sub: str) -> str | None:
     return None
 
 
+BOOTSTRAP_INPROGRESS_TTL_S = 300  # a bootstrap flag older than this is treated as stale
+
+
+def _bootstrap_in_progress_fresh(cfg: dict) -> bool:
+    """True when an in-progress bootstrap flag is recent enough to still honour (block a
+    re-entry). A missing/old timestamp ⇒ the prior attempt died ⇒ not fresh ⇒ retry."""
+    if not cfg.get("schematic_shelter_bootstrap_in_progress"):
+        return False
+    started = cfg.get("schematic_shelter_bootstrap_in_progress_at") or 0
+    try:
+        return (time.time() - float(started)) < BOOTSTRAP_INPROGRESS_TTL_S
+    except (TypeError, ValueError):
+        return False
+
+
 def maybe_bootstrap_schematic_shelter_for_run(run_id: str) -> bool:
     """Patch starter_shelter plan, site-prep pad, file CONSTRUCT/VERIFY card chain (once per run)."""
     from lib.gv2_schematic_shelter import (
@@ -927,6 +943,11 @@ def maybe_bootstrap_schematic_shelter_for_run(run_id: str) -> bool:
     cfg = load_config(run_id)
     cfg.setdefault("run_id", run_id)
     if cfg.get("schematic_shelter_bootstrapped"):
+        return False
+    # Stale-guard: a bootstrap that crashed / was killed between set-flag and completion
+    # would otherwise wedge the flag forever. Honour the in-progress flag only within a
+    # TTL; past it (or with no timestamp), assume the prior attempt died and retry.
+    if _bootstrap_in_progress_fresh(cfg):
         return False
     base = _base_anchor_coords()
     if not base:
@@ -994,20 +1015,29 @@ def maybe_bootstrap_schematic_shelter_for_run(run_id: str) -> bool:
     # body couldn't resolve it → every checkout failed → pipeline cascade). We hold the
     # authoritative coords here, so workers checkout --near "<x> <y> <z>" reliably.
     checkout_coord = f"{int(base['x'])} {int(base['y'])} {int(base['z'])}"
-    filed = file_starter_shelter_sequence(
-        kanban_run,
-        plan=plan,
-        epic_for=epic_p1,
-        anchor_mark="base_anchor",
-        checkout_near=checkout_coord,
-        after_card_id=after,
-        base_anchor=base,
-    )
-    cfg["schematic_shelter_bootstrapped"] = True
-    cfg["schematic_shelter_cards"] = filed
-    cfg["shelter_footprint_min"] = {"x": ox, "y": oy, "z": oz}
-    cfg["shelter_rendered"] = False  # legacy flag — shell built by workers
+    cfg["schematic_shelter_bootstrap_in_progress"] = True
+    cfg["schematic_shelter_bootstrap_in_progress_at"] = time.time()
     save_config(cfg)
+    try:
+        filed = file_starter_shelter_sequence(
+            kanban_run,
+            plan=plan,
+            epic_for=epic_p1,
+            anchor_mark="base_anchor",
+            checkout_near=checkout_coord,
+            after_card_id=after,
+            base_anchor=base,
+        )
+        cfg["schematic_shelter_bootstrapped"] = True
+        cfg["schematic_shelter_cards"] = filed
+        cfg["shelter_footprint_min"] = {"x": ox, "y": oy, "z": oz}
+        cfg["shelter_rendered"] = False  # legacy flag — shell built by workers
+    finally:
+        # Always clear the in-progress flag (success or failure) so a crash can't wedge
+        # it; the TTL guard above is the backstop if even this save fails to persist.
+        cfg.pop("schematic_shelter_bootstrap_in_progress", None)
+        cfg.pop("schematic_shelter_bootstrap_in_progress_at", None)
+        save_config(cfg)
     return True
 
 
@@ -1432,8 +1462,8 @@ def _marks_with_coords() -> dict[str, tuple[int, int, int]]:
 # cascaded into an impossible cobble shelter, a far-water farm, and redundant supply.
 # Score pads deterministically from reconciled marks so the planner can relocate or
 # source the missing resource BEFORE committing. Stone is build-critical → a GATE
-# (no nearby stone = cobble shelter impossible). Water is a FARM-viability WEIGHT,
-# not a base gate (emergent worlds spawn dry on purpose, require_water=False).
+# (no nearby stone = cobble shelter impossible). Water within SITE_WATER_R is required
+# for farm_viable (P2); emergent runs should not commit base_anchor on drought sites.
 SITE_STONE_R = 24
 SITE_WATER_R = 48
 SITE_WOOD_R = 48
@@ -1469,8 +1499,9 @@ def score_site(pos: tuple[int, int, int], marks: dict) -> dict:
         flags.append(f"no_water_within_{SITE_WATER_R}")
     if not wood_ok:
         flags.append(f"no_wood_within_{SITE_WOOD_R}")
+    farm_viable = water_ok
     return {
-        "score": score, "buildable": stone_ok,
+        "score": score, "buildable": stone_ok, "farm_viable": farm_viable,
         "stone_dist": None if sd is None else round(sd, 1), "stone_mark": sn,
         "water_dist": None if wd is None else round(wd, 1), "water_mark": wn,
         "wood_dist": None if od is None else round(od, 1), "wood_mark": on,
@@ -1501,11 +1532,18 @@ def site_fit_brief() -> dict:
     if anchor:
         out["base_anchor"] = anchor
         out["anchor_buildable"] = anchor["buildable"]
+        out["anchor_farm_viable"] = anchor.get("farm_viable", False)
         if not anchor["buildable"]:
             out["warning"] = (
                 f"base_anchor scores {anchor['score']}/5 ({', '.join(anchor['flags'])}); "
                 f"best candidate {best['name']} scores {best['score']}/5 — source stone or "
                 f"relocate before committing to a cobble BUILD")
+        elif not anchor.get("farm_viable"):
+            out["warning"] = (
+                f"base_anchor has no lt_water within {SITE_WATER_R} — P2 farm will not "
+                f"hydrate; relocate base_anchor or file water sourcing BEFORE any [TILL]/"
+                f"[FARM] card (wire depends_on: from TILL to a done water card)"
+            )
     return out
 
 
@@ -1543,10 +1581,10 @@ def file_site_advisory(run_id: str) -> str | None:
         f"({best.get('score')}/5).\n\n"
         f"You are the PLANNER. Decide via the BOARD and file follow-ups:\n"
         f"(a) stone missing: file SUPPLY (haul cobble) or relocate before BUILD.\n"
-        f"(b) water missing (or far): the P2 FARM epic tills beside water; file a water-haul "
-        f"(gatherer buckets from nearest lt_water and places at/near farm plot), relocate "
-        f"base_anchor/farm site, or accept a dry farm (will not hydrate/grow). The FARM "
-        f"worker will block with no_water rather than loop if it cannot establish hydration.\n"
+        f"(b) water missing (or far): do NOT file [TILL]/[FARM] until water is at the plot "
+        f"(lt_water mark within ~8 blocks OR a done water-haul CONSTRUCT). Wire "
+        f"`depends_on:` from TILL to the water card. Relocate base_anchor to a pad with "
+        f"lt_water within {SITE_WATER_R} when possible.\n"
         f"(c) scope the shelter plank-only if stone is the blocker.\n"
         f"Then `kanban_complete` this advisory."
     )
@@ -2097,7 +2135,8 @@ def _release_lease_by_owner(owner_id: str) -> bool:
 def reap_orphan_leases(run_id: str | None = None, *, reap_all: bool = False,
                        status_by_id: dict[str, str] | None = None,
                        lease_rows: list[dict] | None = None) -> list[dict]:
-    """Free pool-body leases whose owning kanban task is no longer active.
+    """    Free pool-body leases whose owning kanban task is no longer active, OR whose
+    worker body is dead/unreachable while the card still shows `running`.
 
     A worker that times out / gives up / is killed never runs `mc bot release`, so
     its lease lingers until the 1h TTL (lease-registry.reapExpiredIdle only
@@ -2105,8 +2144,10 @@ def reap_orphan_leases(run_id: str | None = None, *, reap_all: bool = False,
     That locks the body; once all three leak the pool deadlocks (see the
     gv2-2026-06-15-3 postmortem). The poller CAN see board status, so it reaps
     here: a lease whose owner task is terminal (archived/done/cancelled) or absent
-    from the board is released immediately. `release()` still refuses a busy body,
-    so an in-flight action is never stolen.
+    from the board is released immediately. Also reaps when the card is still
+    `running` but `mc bot status --pool` reports the lease body unreachable (gateway
+    zombie / HTTP dead) — without waiting for supervise-budget parking (gv2-2026-06-24-10).
+    `release()` still refuses a busy body, so an in-flight action is never stolen.
 
     reap_all=True (boot clean-slate) releases every genesis-owned lease regardless
     of status — a fresh run must start with an empty pool, which also clears a
@@ -2124,9 +2165,25 @@ def reap_orphan_leases(run_id: str | None = None, *, reap_all: bool = False,
         task_id = owner[len(prefix):].split(":", 1)[0]  # board:task[:session]
         st = status.get(task_id)
         terminal = (st is None) or (st in TERMINAL_TASK_STATUSES)
-        if reap_all or terminal:
+        worker_unreachable = False
+        # Only consider unreachable-reap for a NON-busy running body. A busy body is
+        # the active builder mid-action — a transient HTTP blip during a fill must
+        # never reap its lease (that's the "body stolen mid-build" failure we guard
+        # against). For busy bodies, fall through to terminal-card status only.
+        if st == "running" and not r.get("busy"):
+            if not r.get("reachable", True):
+                worker_unreachable = True
+            else:
+                bot_key = (r.get("bot") or "").lower()
+                port = BOT_PORT_BY_USER.get(bot_key)
+                if port is not None and not _bot_connected(port):
+                    worker_unreachable = True
+        if reap_all or terminal or worker_unreachable:
             if _release_lease_by_owner(owner):
-                freed.append({"bot": r.get("bot"), "owner_id": owner, "status": st or "absent"})
+                reason = st or "absent"
+                if worker_unreachable and st == "running":
+                    reason = "worker_unreachable"
+                freed.append({"bot": r.get("bot"), "owner_id": owner, "status": reason})
     return freed
 
 
@@ -2448,6 +2505,37 @@ def _supply_source(res: str) -> tuple[str, dict] | None:
     return n, {"x": int(m["x"]), "y": int(m["y"]), "z": int(m["z"])}
 
 
+_SCHEMATIC_PLAN_BODY_RE = re.compile(r"plan:\s*starter_shelter\b", re.I)
+_WOOD_SUPPLY_ITEMS = frozenset({"oak_log", "oak_planks", "stick", "wood"})
+
+
+def _open_schematic_phase_supply(tasks: list[dict], resource: str | None, items: list | None) -> bool:
+    """True when an open starter_shelter plan SUPPLY already covers this haul."""
+    if resource != "wood":
+        return False
+    want = {_normalize_supply_item(i) for i in (items or [])}
+    if not want:
+        want = {"oak_log", "oak_planks"}
+    for t in tasks:
+        st = (t.get("status") or "").lower()
+        if st in ("done", "archived"):
+            continue
+        body = t.get("body") or ""
+        title = t.get("title") or ""
+        if "[SUPPLY]" not in title and "SUPPLY" not in title:
+            continue
+        if not _SCHEMATIC_PLAN_BODY_RE.search(body):
+            continue
+        blob = f"{title}\n{body}".lower()
+        if any(item in blob for item in want):
+            return True
+    return False
+
+
+def _normalize_supply_item(item: str) -> str:
+    return str(item or "").strip().lower().replace("-", "_")
+
+
 def file_supply_card(run_id: str, deficit: dict) -> str | None:
     """File a [GENESIS2:SUPPLY] worker card for a below-target resource, routed to
     the genesis expertise that restocks it (deficit['assignee']). Dedup (skip an
@@ -2459,6 +2547,16 @@ def file_supply_card(run_id: str, deficit: dict) -> str | None:
         tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
     except Exception:
         tasks = []
+    # Missing/unreadable run config must not crash the poller — it just means we
+    # can't know whether the schematic is active, so we skip the schematic-supply
+    # dedup and fall through to the generic dedup/cap below.
+    try:
+        cfg = load_config(run_id)
+    except Exception:
+        cfg = {}
+    if cfg.get("schematic_shelter_bootstrapped") or cfg.get("schematic_shelter_cards"):
+        if _open_schematic_phase_supply(tasks, res, deficit.get("items")):
+            return None
     tag = f"SUPPLY {res}"
     prior = 0
     for t in tasks:
@@ -2911,9 +3009,63 @@ def _capture_chest_snapshots() -> dict | None:
             for k, v in snaps.items():
                 if str(k).startswith("chest_"):
                     chests[f"{name}:{k}"] = v
+    if chests:
+        return {"captured_at": gl._iso_utc(), "chests": chests, "source": "pool_state"}
+    # Fallback: persisted per-bot chest snapshot files (pool may be down at cap).
+    for user, meta in BODY_POOL.items():
+        path = DATA_DIR / f"chest-snapshots-{user.lower()}.json"
+        if not path.is_file():
+            path = DATA_DIR / f"chest-snapshots-{user}.json"
+        if path.is_file():
+            try:
+                doc = json.loads(path.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(doc, dict):
+                for k, v in doc.items():
+                    if str(k).startswith("chest_"):
+                        chests[f"{user}:{k}"] = v
     if not chests:
         return None
-    return {"captured_at": gl._iso_utc(), "chests": chests}
+    return {"captured_at": gl._iso_utc(), "chests": chests, "source": "persisted_files"}
+
+
+def _footprint_coverage_from_layers(ox: int, oy: int, oz: int, layers: dict) -> dict:
+    l0_y = oy - 1
+    l1_y = oy
+    l0_layer = layers.get(str(l0_y)) or {}
+    l1_layer = layers.get(str(l1_y)) or {}
+    l0_cells = l0_layer.get("cells") or {}
+    l1_cells = l1_layer.get("cells") or {}
+    l0_air = 0
+    l0_water = 0
+    l0_unread = 0
+    for x in range(ox - 3, ox + 4):
+        for z in range(oz - 3, oz + 4):
+            key = f"{x},{z}"
+            if key not in l0_cells:
+                l0_unread += 1
+                continue
+            block = l0_cells[key]
+            if block == "air":
+                l0_air += 1
+            elif block in ("water", "lava"):
+                l0_water += 1
+    cobble = sum(1 for k, b in l1_cells.items() if "cobble" in str(b))
+    l0_ok = l0_unread == 0 and l0_air == 0 and l0_water == 0
+    return {
+        "l0_footprint": True,
+        "l0_y": l0_y,
+        "l0_air": l0_air,
+        "l0_water": l0_water,
+        "l0_unread": l0_unread,
+        "l0_footprint_cells": 49,
+        "l0_ok": l0_ok,
+        "coverage_complete": l0_unread == 0,
+        "l1_slab": True,
+        "l1_slab_ok": cobble >= 20,
+        "l1_cobble_cells": cobble,
+    }
 
 
 def _capture_base_snapshot(world: str = "genesis2", *, run_id: str | None = None) -> dict | None:
@@ -2937,14 +3089,15 @@ def _capture_base_snapshot(world: str = "genesis2", *, run_id: str | None = None
     cells = [(x, z) for z in range(oz - 3, oz + 8) for x in range(ox - 3, ox + 8)]
     layers: dict[str, dict] = {}
     try:
-        # Capture high enough to score the starter_shelter shell physically:
-        # base_anchor.y is one above the plan footprint origin, so walls/roof live
-        # at oy+2..oy+4. Earlier snapshots stopped at oy+2 and could only prove L0.
+        rcon_in(world, [
+            f"forceload add {(ox - 3) >> 4} {(oz - 3) >> 4}",
+            f"forceload add {(ox + 3) >> 4} {(oz + 3) >> 4}",
+        ])
         for y in range(oy - 2, oy + 5):
             cls = classify_cells(world, y, cells, rcon_in)
             layers[str(y)] = {
                 "counts": dict(Counter(cls.values())),
-                "cells": {f"{x},{z}": m for (x, z), m in cls.items() if m not in ("air", "unknown")},
+                "cells": {f"{x},{z}": m for (x, z), m in cls.items()},
             }
     except Exception as exc:
         # Don't swallow silently — gv2-2026-06-22-5 returned None at cap (worked manually
@@ -2956,6 +3109,7 @@ def _capture_base_snapshot(world: str = "genesis2", *, run_id: str | None = None
         return None
     snap = {"origin": [ox, oy, oz], "footprint": [7, 7],
             "captured_from": "stop (live world)", "layers": layers}
+    snap["coverage"] = _footprint_coverage_from_layers(ox, oy, oz, layers)
     shell = _capture_starter_shelter_shell(world, run_id=run_id)
     if shell:
         snap["shell"] = shell
@@ -2990,6 +3144,30 @@ def _capture_starter_shelter_shell(world: str = "genesis2", *, run_id: str | Non
     if not (isinstance(anchor, list) and len(anchor) == 3):
         return None
     ax, ay, az = (int(anchor[0]), int(anchor[1]), int(anchor[2]))
+    wall_dys: set[int] = set()
+    roof_dys: set[int] = set()
+    for ph in plan.get("phases") or []:
+        pid = ph.get("id")
+        dys: set[int] = set()
+        if ph.get("level") is not None:
+            try:
+                dys = {int(ph["level"])}
+            except (TypeError, ValueError):
+                dys = set()
+        elif ph.get("range"):
+            try:
+                a, b = (int(x) for x in str(ph["range"]).split(".."))
+                dys = set(range(a, b + 1))
+            except (ValueError, TypeError):
+                dys = set()
+        if pid == "L3_walls" and dys:
+            wall_dys = dys
+        elif pid == "L4_roof" and dys:
+            roof_dys = dys
+    if not wall_dys:
+        wall_dys = {2, 3, 4}
+    if not roof_dys:
+        roof_dys = {5}
     checks: list[tuple[str, int, int, int, str]] = []
     for cell in plan.get("cells") or []:
         loc = cell.get("local")
@@ -2997,7 +3175,7 @@ def _capture_starter_shelter_shell(world: str = "genesis2", *, run_id: str | Non
         if not (isinstance(loc, list) and len(loc) == 3 and block):
             continue
         dx, dy, dz = (int(loc[0]), int(loc[1]), int(loc[2]))
-        phase = "walls" if dy in (3, 4) else "roof" if dy == 5 else None
+        phase = "walls" if dy in wall_dys else "roof" if dy in roof_dys else None
         if phase:
             checks.append((phase, ax + dx, ay + dy, az + dz, str(block)))
     if not checks:
