@@ -1,15 +1,31 @@
-"""RconClient — rcon-cli over ssh+docker.
+"""RconClient — rcon to the MC server, over ssh+docker OR native TCP.
 
-Extracted from the run_rcon / run_rcon_batch pattern that's duplicated across
-all 44 scripts/test-*.py files and scripts/agent-test.py. The implementation
-shells out to ssh+docker+rcon-cli; the `mode` field on config.rcon reserves
-space for a future native rcon protocol implementation.
+Two transports, selected by config.rcon.mode:
+  - "ssh" (default): shells out to ssh+docker+rcon-cli (the LAN/CI server).
+  - "tcp" / "direct": native rcon over TCP via `mcrcon`, for a local Paper
+    server (see server/local-setup.sh + config $overrides.local).
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
+from pathlib import Path
 from typing import Iterable
+
+# Collapse embedded newlines so a batched response keeps one line per command —
+# sample_blocks() indexes results by line ordinal.
+_BATCH_LINE_NORMALIZE = str.maketrans({"\n": " ", "\r": " "})
+
+
+def _read_rcon_password(rcon: dict) -> str:
+    """Resolve the rcon password from `rcon.password` or `rcon.password_file`."""
+    if rcon.get("password"):
+        return str(rcon["password"]).strip()
+    pf = rcon.get("password_file")
+    if pf:
+        return Path(str(pf)).expanduser().read_text(encoding="utf-8").strip()
+    raise ValueError("tcp rcon requires rcon.password or rcon.password_file")
 
 
 class RconClient:
@@ -22,27 +38,73 @@ class RconClient:
 
     def __init__(self, config: dict):
         rcon = config["rcon"]
-        if rcon["mode"] != "ssh":
-            raise NotImplementedError(f"rcon.mode={rcon['mode']!r} not supported yet (only 'ssh')")
-        self.ssh_host = rcon["ssh_host"]
-        self.container = rcon["docker_container"]
-        self.cli = rcon["cli"]
-        self.command_timeout = rcon["command_timeout_s"]
-        self.batch_timeout = rcon["batch_timeout_s"]
+        self.mode = rcon.get("mode", "ssh")
         self.world = config["mc"]["world"]
-        self.ssh_multiplex = bool(rcon.get("ssh_multiplex", True))
-        import os
+        self.command_timeout = rcon.get("command_timeout_s", 20)
+        self.batch_timeout = rcon.get("batch_timeout_s", 60)
 
-        # SSH ControlPath length limit: Unix domain sockets cap at 104
-        # chars on macOS (108 on Linux). SSH appends a per-listener
-        # suffix like ".6gAdsKS7pDL7RjF8" (~17 chars) on top of the
-        # %h-%p-%r expansion. macOS's default $TMPDIR
-        # (/var/folders/q8/.../T/) eats 49 chars by itself — plus our
-        # 41-char prefix + ssh suffix overflows the limit, and rcon-cli
-        # silently returns empty stdout (exit 255 "unix_listener: path
-        # too long"). Anchoring on /tmp keeps the full path well under
-        # the 104-char cap.
-        self._cm_path = f"/tmp/hermes-rcon-cm-{os.getuid()}-%h-%p-%r"
+        if self.mode == "ssh":
+            self.ssh_host = rcon["ssh_host"]
+            self.container = rcon["docker_container"]
+            self.cli = rcon["cli"]
+            self.ssh_multiplex = bool(rcon.get("ssh_multiplex", True))
+            # Anchor ControlPath on /tmp: macOS's default $TMPDIR overflows the
+            # 104-char socket-path cap, making rcon-cli silently return empty.
+            self._cm_path = f"/tmp/hermes-rcon-cm-{os.getuid()}-%h-%p-%r"
+        elif self.mode in ("tcp", "direct"):
+            self.tcp_host = rcon.get("host", "127.0.0.1")
+            self.tcp_port = int(rcon.get("port", 25575))
+            self.tcp_password = _read_rcon_password(rcon)
+            self.tcp_reconnect = bool(rcon.get("reconnect", True))
+            self._mcr = None  # lazily-opened mcrcon.MCRcon
+        else:
+            raise NotImplementedError(
+                f"rcon.mode={self.mode!r} not supported (use 'ssh' or 'tcp')"
+            )
+
+    # ── native TCP transport (mcrcon) ──────────────────────────────────────
+    def _tcp_open(self):
+        import socket as _socket
+
+        from mcrcon import MCRcon
+
+        # mcrcon uses signal.alarm() which needs an int timeout.
+        mcr = MCRcon(
+            self.tcp_host, self.tcp_password, port=self.tcp_port,
+            timeout=max(1, int(self.command_timeout)),
+        )
+        mcr.connect()
+        try:
+            mcr.socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, 1)
+        except (OSError, AttributeError):
+            pass
+        self._mcr = mcr
+
+    def _tcp_command(self, cmd: str) -> str:
+        from mcrcon import MCRconException
+
+        if self._mcr is None:
+            self._tcp_open()
+        try:
+            return self._mcr.command(cmd)
+        except (BrokenPipeError, ConnectionResetError, OSError, MCRconException):
+            if not self.tcp_reconnect:
+                raise
+            try:
+                self._mcr.disconnect()
+            except Exception:  # noqa: BLE001
+                pass
+            self._mcr = None
+            self._tcp_open()
+            return self._mcr.command(cmd)
+
+    def close(self):
+        """Close the TCP connection if open (ssh mode is a no-op)."""
+        if getattr(self, "_mcr", None) is not None:
+            try:
+                self._mcr.disconnect()
+            finally:
+                self._mcr = None
 
     def _argv(self) -> list[str]:
         base = ["ssh"]
@@ -61,6 +123,8 @@ class RconClient:
 
     def run(self, cmd: str) -> str:
         """Run a single rcon command. Returns combined stdout, stripped."""
+        if self.mode != "ssh":
+            return self._tcp_command(cmd).strip()
         result = subprocess.run(
             self._argv(),
             input=cmd + "\n",
@@ -71,11 +135,16 @@ class RconClient:
         return result.stdout.strip()
 
     def batch(self, cmds: Iterable[str]) -> str:
-        """Run many rcon commands via a single ssh+rcon-cli invocation.
-        Returns combined stdout (un-stripped — caller may need line-by-line)."""
+        """Run many rcon commands. Returns combined stdout, one line per command
+        (un-stripped — caller may need line-by-line)."""
         cmds = list(cmds)
         if not cmds:
             return ""
+        if self.mode != "ssh":
+            # rcon is request/response per command; loop and rejoin one line each.
+            return "\n".join(
+                self._tcp_command(c).translate(_BATCH_LINE_NORMALIZE) for c in cmds
+            )
         payload = "\n".join(cmds) + "\n"
         result = subprocess.run(
             self._argv(),

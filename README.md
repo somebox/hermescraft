@@ -32,6 +32,7 @@ Same Minecraft stack (`mc` → bot HTTP API → Mineflayer), but **deeper bot/ru
 | Docs | Role |
 |------|------|
 | [`docs/README.md`](docs/README.md) | Full index |
+| [`docs/guides/local-dev-setup.md`](docs/guides/local-dev-setup.md) | **Run the whole stack locally** (self-hosted Paper, no LAN/ssh) |
 | [`docs/architecture/target.md`](docs/architecture/target.md) | Canonical target statement |
 | [`docs/reference/`](docs/reference/) | `mc` cheatsheet, command reference, bot map |
 | [`docs/specs/`](docs/specs/) | World, nav, kanban, agent DSL specs |

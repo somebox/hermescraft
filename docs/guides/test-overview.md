@@ -1,5 +1,11 @@
 # Test overview
 
+> **Running locally?** To run any live-server tier on this machine (self-hosted
+> Paper + native TCP rcon, no ssh/docker), see
+> [`local-dev-setup.md`](local-dev-setup.md). The `ssh ubuntu-host` / `docker`
+> prerequisites below describe the legacy LAN server; the local setup replaces
+> them with `HERMESCRAFT_PROFILE=local` + `server/local-*.sh`.
+
 HermesCraft has five tiers of tests with different prerequisites and
 runtimes. Only Tier 1 runs in CI today; the rest are manual / local.
 

@@ -32,6 +32,9 @@ server/versions/
 server/plugins/
 server/world*/
 server/hermescraft-world*/
+# Local dev Multiverse worlds (server/local-setup.sh)
+server/landfolk-test/
+server/proc-lab*/
 server/*.jar
 server/*.json
 server/*.yml
