@@ -21,6 +21,10 @@ secrets.*.yaml
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
 
+# somebox/cards local workspace
+.cards/work-cards.db
+.cards/artifacts/
+
 # server/ — Paper runtime (only start.sh is source)
 !server/start.sh
 server/logs/
