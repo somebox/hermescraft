@@ -19,15 +19,77 @@ A Hermes agent can join your world, chat with you in Minecraft, follow you, gath
 
 Built for the Nous Hermes hackathon. This repository is a **fork** of the original HermesCraft author’s project: the **idea** is unchanged — Hermes agents as real Minecraft players, fair-play perception, and multi-agent worlds — but **`experiment/hermes-agents` is a deep rewrite**, not a polish pass on the upstream tree.
 
-### Architecture rewrite on this branch
+## What this project is
 
-The implementation here targets **current Hermes (v0.15 kanban, skills, gateway dispatch, worker lanes)** and a **different orchestration model** than the early hackathon fleet (long-lived Steward + four named bot workers sharing huge skill catalogs). The design direction is written up in [`docs/architecture/target.md`](docs/architecture/target.md) (exploration in progress; not fully built yet). In short:
+This project started as a fork of someone else's hackathon idea and has since evolved into a personal sandbox for exploring what it looks like to put Hermes LLM agents inside Minecraft as real, embodied players. It is not a benchmark, not a scripted NPC framework, and not a god-mode bot — it is a long-running experiment in agent behavior that a normal human player could plausibly share a world with.
 
-- **Agents are actor identities; bots are bodies; cards pair them per phase.** An agent is a Hermes profile (`@navigator`, `@miner`, `@planner`, …). A bot is a Mineflayer body in `data/bots/*.yaml`. Work is kanban cards with `assignee=<agent>` and optional `metadata.bot=<bot>`.
-- **Smaller scope per invocation.** One card ≈ one phase, fresh worker, narrow skills — because wide catalogs and long sessions accumulate noise and hurt flash-tier models more than bigger models fix.
-- **Bot-less coordination.** `@planner` (intents from operator DSL), `@dispatcher` (bind bodies, fleet mutex), `@overseer` (epic judgment) replace the old Steward-as-orchestrator pattern; the in-game `mc` stack stays the execution surface.
+### What it is, technically
 
-Same Minecraft stack (`mc` → bot HTTP API → Mineflayer), but **deeper bot/runtime work** (regions, nav briefs, playbooks, procedural test worlds, landfolk plugin hooks) and **docs/specs aligned to the new model**. [`docs/architecture/README.md`](docs/architecture/README.md) is the reading order; [`docs/guides/`](docs/guides/) still documents **today’s** landfolk genesis and fleet commands while migration proceeds.
+Each character is a normal Hermes agent with its own `HERMES_HOME`, its own memory and session history, its own SOUL, and its own Mineflayer bot body. The Minecraft-specific surface is a single CLI on top of a thin HTTP layer:
+
+```text
+Hermes agent
+  → mc CLI
+  → bot HTTP API
+  → Mineflayer body
+  → Minecraft world
+```
+
+That same stack powers both a one-companion world and a small multi-agent one. There is no separate custom agent runtime — the project leans on Hermes primitives (kanban, skills, profiles, gateway dispatch) and adds a thin host layer for the Minecraft-specific bits.
+
+### Why it tries to be different
+
+Most Minecraft-AI projects fall into one of three buckets: benchmark agents, scripted NPCs, or bots with too much privileged information. This project is trying for something more useful and more believable.
+
+It aims to be:
+
+- **Embodied** — perception comes from the same line of sight, directional sound, and in-game chat a human has.
+- **Fair-play** — no x-ray omniscience; entities are filtered by LOS and range; sensing is shaped by what the bot can actually see and hear.
+- **Persistent** — memory, sessions, locations, and identity survive across runs.
+- **Social** — public chat, private DMs, queued player commands, and the ability to overhear nearby conversation.
+- **Usable** — a normal player should be able to drop one of these into a real world and have it feel like a friend, not a tool.
+
+### Where the project is right now
+
+The implementation here targets current Hermes (v0.15 kanban, skills, gateway dispatch, worker lanes) and is in the middle of an architecture migration. The early hackathon fleet was a long-lived Steward orchestrator plus four named workers (Gatherer, Flint, Mason, Barley) that each carried a large skill catalog. That worked as a demo; it did not hold up to longer runs.
+
+The target is a sharper split.
+
+- **Agents are expertise.** A `@miner`, `@navigator`, `@builder`, `@planner`, `@dispatcher`, or `@overseer` is a Hermes profile with skills, memory, and SOUL.
+- **Bots are bodies.** A `pip`, `mox`, or `zee` is a Mineflayer process and a registry entry — not a Hermes profile.
+- **Cards pair them for a bounded phase of work.** A card with `assignee=@miner metadata.bot=pip` spawns a fresh, narrow-scope worker for one phase and exits.
+
+In practice this means smaller scope per invocation, narrower skill bundles, code-enforced backstops rather than prompt-enforced rules, and structured observation surfaces that answer the *current* decision instead of dumping raw world state. The canonical target statement is [`docs/architecture/target.md`](docs/architecture/target.md); the reading order lives in [`docs/architecture/README.md`](docs/architecture/README.md).
+
+### What this project is deliberately not doing
+
+The architecture is shaped as much by what is left out as by what is built.
+
+- **No Steward monolith.** Planner, dispatcher, and overseer are split profiles with different jobs, not bundled back into a long-lived orchestrator bot.
+- **No every-worker-loads-every-skill.** Skills are scoped per card and per profile; the full `mc` registry stays, but a specialist sees a generated small surface, not the whole thing.
+- **No prose as the only enforcement layer.** The control plane enforces budgets, mutex, retries, and stop conditions. SOUL prose describes intent; the host layer enforces it.
+- **No mark count as proof of progress.** Verification predicates and run artifacts are first-class. A worker claiming "done" is not the same as `mc verify` accepting the work.
+- **No god-mode perception.** Sensing is shaped by what the bot can actually see, hear, and remember; `mc scene`, `mc look`, and `mc map` are fair-play by design.
+- **No patches to Hermes core for Minecraft-specific body binding.** That lives in the host dispatcher, not in the upstream agent framework.
+
+### What "working" looks like
+
+A specialist card is doing its job when it beats the wide-worker baseline on:
+
+- fewer tool errors per completed card,
+- fewer turns to first useful action,
+- lower context tokens at completion,
+- fewer repeated identical or same-class failures,
+- faster wall-clock completion for the same world outcome,
+- better auditability — action logs, snapshots, and verification explain what happened.
+
+For the colony as a whole, the bar is runs that go longer without operator diagnosis: site selection rejects bad pads before build cards, stock state stops oversupply and empty-chest churn, repeated tool-error loops auto-block or rescope, and `mc verify` catches impossible or superseded work before it churns the board.
+
+### The longer view
+
+Minecraft is the proving ground, not the endpoint. The longer-term question this project is exploring is whether the same Hermes architecture can support MiroFish-style agent societies — but in a physical sandbox world with terrain, resources, danger, geography, structures, and human players. If one agent can feel like a friend, and several can start to make a world feel inhabited, that is a strong foundation for persistent embodied AI.
+
+## Documentation map
 
 | Docs | Role |
 |------|------|
@@ -40,50 +102,6 @@ Same Minecraft stack (`mc` → bot HTTP API → Mineflayer), but **deeper bot/ru
 | [`docs/archive/`](docs/archive/) | Superseded phase-2/3 design and old `features/` (historical only) |
 
 Maintainers: **`AGENTS.md`** + **`docs/architecture/`** for where the fleet is going; **`docs/guides/`** for what to run this week.
-
-## What HermesCraft actually is
-
-HermesCraft is not a fake NPC framework and not a separate custom agent runtime.
-
-Each character is a normal Hermes agent with:
-- its own `HERMES_HOME`
-- its own memory and session history
-- its own SOUL / prompt
-- its own Minecraft bot body
-- the standard Hermes tool stack
-- the `mc` interface for Minecraft-specific action and perception
-
-Core architecture:
-
-```text
-Hermes Agent
-  -> terminal + tools
-  -> mc CLI
-  -> bot/server.js HTTP API
-  -> Mineflayer bot body
-  -> Minecraft world
-```
-
-That same stack powers:
-- one companion in your personal world
-- a small cast of world characters
-- larger multi-agent simulations
-
-## Why this matters
-
-Most Minecraft AI projects are one of these:
-- benchmark agents
-- scripted NPCs
-- bots with too much privileged information
-
-HermesCraft is trying to be something more useful and more believable:
-- embodied instead of disembodied
-- fair instead of x-ray omniscient
-- persistent instead of sessionless
-- social instead of purely task-oriented
-- usable by normal players in a real Minecraft world
-
-Long term, this points toward MiroFish-style agent societies — but in a physical sandbox world with terrain, resources, danger, geography, structures, and human players.
 
 ## Main modes
 
@@ -350,16 +368,6 @@ Still rough:
 - building taste still benefits from screenshot + vision loops
 - longer-term social simulation needs stronger town-level memory / replay tooling
 - public clean-room reproducibility still depends on a reasonably configured local Hermes + Minecraft environment
-
-## Big picture
-
-Minecraft is the proving ground, not the endpoint.
-
-HermesCraft is really about whether the same Hermes architecture can work in two human-legible scales:
-- personal companionship
-- multi-agent worlds
-
-If one agent can feel like a friend, and many agents can start to make a world feel inhabited, that is a strong foundation for persistent embodied AI systems.
 
 ## License
 
