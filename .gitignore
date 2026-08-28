@@ -18,6 +18,7 @@ secrets.*.yaml
 
 # IDE & local agent tooling
 .cursor/
+.cards/
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
 
